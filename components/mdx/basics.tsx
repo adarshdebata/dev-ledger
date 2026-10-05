@@ -24,14 +24,13 @@ function makeHeading(Tag: "h2" | "h3") {
       <Tag id={id} className="group relative" {...rest}>
         {id && (
           <span className="not-prose">
+            {/* The "#" is drawn by CSS, so it isn't part of the heading's text (search titles, copy-paste). */}
             <a
               href={`#${id}`}
               aria-hidden="true"
               tabIndex={-1}
-              className="absolute top-0 -left-6 hidden pr-2 font-normal text-subtle opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent md:block"
-            >
-              #
-            </a>
+              className="absolute top-0 -left-6 hidden pr-2 font-normal text-subtle opacity-0 transition-opacity group-hover:opacity-100 before:content-['#'] hover:text-accent md:block"
+            />
           </span>
         )}
         {children}
