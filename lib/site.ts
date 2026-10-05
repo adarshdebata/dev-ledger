@@ -5,7 +5,7 @@ export const site = {
   description:
     "A running record of backend engineering: practical, interactive deep dives for developers, from students to seniors.",
   theme: "Engineering Under the Hood",
-  tagline: "Understand the systems behind the code you write every day.",
+  tagline: "Simple, visual explanations of the tech you use every day.",
   hook: "You use it every day. But do you actually know what happens underneath?",
   author: {
     name: "Adarsh Kumar Debata",
@@ -31,11 +31,11 @@ export const withBase = (path: string) => `${site.basePath}${path}`;
 export type SeriesInfo = { n: number; title: string; blurb: string };
 
 export const series: SeriesInfo[] = [
-  { n: 1, title: "The Web You Think You Understand", blurb: "HTTP, browsers, DNS, TCP and TLS: the layers every request quietly passes through." },
-  { n: 2, title: "Things We Install Without Understanding", blurb: "Helmet, Nginx, CDNs, proxies and npm: the tools on every stack, opened up." },
-  { n: 3, title: "Docker Under the Hood", blurb: "Images, layers, namespaces and cgroups: what a container really is." },
-  { n: 4, title: "Databases Under the Hood", blurb: "Indexes, transactions, locks and WAL: what your queries set in motion." },
-  { n: 5, title: "Distributed Systems", blurb: "Timeouts, retries, idempotency and queues: what changes once a network is involved." },
+  { n: 1, title: "The Web You Think You Understand", blurb: "How the web really works: requests, browsers, HTTPS and DNS, in plain words." },
+  { n: 2, title: "Things We Install Without Understanding", blurb: "Popular tools like Nginx, npm and CDNs: what they actually do once installed." },
+  { n: 3, title: "Docker Under the Hood", blurb: "What a container really is, built up one simple step at a time." },
+  { n: 4, title: "Databases Under the Hood", blurb: "What your database does behind the scenes every time you run a query." },
+  { n: 5, title: "Distributed Systems", blurb: "What changes when work is split across many machines that can fail." },
 ];
 
 export const getSeries = (n: number) => series.find((s) => s.n === n);

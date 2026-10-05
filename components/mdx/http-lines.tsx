@@ -1,13 +1,13 @@
 /**
  * Renders an HTTP message with light annotations. Line prefixes:
  *   "+ " added by the browser/server (green)   "- " missing or stripped (red, struck)
- *   "! " worth noticing (violet)                "# " a comment (muted)
+ *   "! " worth noticing (accent)                "# " a comment (muted)
  */
 export function HttpLines({ text, className = "" }: { text: string; className?: string }) {
   const lines = text.replace(/^\n+|\n+$/g, "").split("\n");
   return (
     <pre
-      className={`scroll-thin overflow-x-auto rounded-lg border border-line bg-code py-2.5 font-mono text-[11.5px] leading-[1.75] sm:text-[12px] ${className}`}
+      className={`overflow-x-auto rounded-lg border border-line bg-code py-2.5 font-mono text-[11.5px] leading-[1.75] sm:text-[12px] ${className}`}
     >
       {lines.map((raw, i) => {
         const tag = raw.slice(0, 2);

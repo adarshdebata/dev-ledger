@@ -71,7 +71,8 @@ let cache: Post[] | null = null;
 
 /** Every post, newest first. */
 export function getAllPosts(): Post[] {
-  if (cache) return cache;
+  // Cache across a build, but re-read in development so edits to posts show up on refresh.
+  if (cache && process.env.NODE_ENV === "production") return cache;
   const slugs = fs.existsSync(POSTS_DIR)
     ? fs.readdirSync(POSTS_DIR).filter((d) => fs.existsSync(path.join(POSTS_DIR, d, "index.mdx")))
     : [];

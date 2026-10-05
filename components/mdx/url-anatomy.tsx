@@ -29,7 +29,7 @@ export function UrlAnatomy({
   rest?: string;
 }) {
   return (
-    <figure className="not-prose my-8 rounded-2xl border border-line bg-card px-4 py-6 shadow-card sm:px-6">
+    <figure className="not-prose my-8 rounded-2xl border border-line px-4 py-6 sm:px-6">
       <div className="flex flex-wrap items-start justify-center gap-x-1 gap-y-5 font-mono text-[15px] sm:text-[17px]">
         <span className="flex flex-col">
           <span className="flex items-start">

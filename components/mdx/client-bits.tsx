@@ -28,7 +28,7 @@ export function CopyButton() {
       ref={ref}
       type="button"
       onClick={copy}
-      className="grid size-7 place-items-center rounded-md text-subtle transition-colors hover:bg-accent-tint hover:text-fg"
+      className="grid size-7 place-items-center rounded-md border border-transparent text-subtle transition-colors hover:border-line hover:bg-bg/70 hover:text-fg hover:backdrop-blur"
       aria-label={copied ? "Copied" : "Copy code"}
     >
       {copied ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
@@ -54,13 +54,13 @@ export function CodeTabs({ labels, children }: { labels: string[]; children: Rea
             aria-controls={`${id}-panel-${i}`}
             onClick={() => setActive(i)}
             className={`relative shrink-0 rounded-lg px-3.5 py-1.5 text-[13px] font-medium whitespace-nowrap transition-colors ${
-              i === active ? "text-fg" : "text-muted hover:text-fg"
+              i === active ? "text-bg" : "text-muted hover:text-fg"
             }`}
           >
             {i === active && (
               <motion.span
                 layoutId={`${id}-pill`}
-                className="absolute inset-0 rounded-lg bg-card shadow-card"
+                className="absolute inset-0 rounded-lg bg-fg"
                 transition={{ type: "spring", stiffness: 500, damping: 40 }}
               />
             )}
@@ -100,7 +100,7 @@ export function Predict({
   const done = picked !== null;
 
   return (
-    <div className="not-prose my-8 rounded-2xl border border-line bg-card p-5 shadow-card sm:p-6">
+    <div className="not-prose my-8 rounded-2xl border border-line p-5 sm:p-6">
       <p className="flex items-center gap-2 text-xs font-semibold tracking-wider text-accent uppercase">
         <HelpCircle className="size-4" /> Predict first
       </p>

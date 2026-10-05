@@ -24,13 +24,13 @@ export function ChainStrip({ chain, animated = true }: { chain: Chain; animated?
           <li key={s.name} className="flex items-center gap-1">
             <span
               className={`relative isolate inline-flex items-center gap-1.5 overflow-hidden rounded-full border px-3 py-1 text-[13px] font-medium ${
-                live ? "border-accent-soft/50 text-fg" : "border-line text-muted"
+                live ? "border-accent-soft/60 text-fg" : "border-line text-muted"
               }`}
             >
               {animated && (
                 <span
                   aria-hidden="true"
-                  className="animate-flow-bg absolute inset-0 -z-10 bg-accent-soft/25 opacity-0 motion-reduce:hidden"
+                  className="animate-flow-bg absolute inset-0 -z-10 bg-teal-tint opacity-0 motion-reduce:hidden"
                   style={style}
                 />
               )}
@@ -65,24 +65,24 @@ export function ChainTimeline({ chain, titles }: { chain: Chain; titles: Map<num
             {i < chain.stages.length - 1 && (
               <span
                 aria-hidden="true"
-                className={`absolute top-10 bottom-0 left-[1.2rem] w-px ${live ? "bg-gradient-to-b from-accent-soft to-line" : "bg-line"}`}
+                className={`absolute top-10 bottom-0 left-[1.2rem] w-px ${live ? "bg-accent-soft/60" : "bg-line"}`}
               />
             )}
             <span
               className={`relative z-10 grid size-10 place-items-center rounded-full border font-mono text-sm font-semibold ${
-                live ? "bg-brand border-transparent text-white shadow-lift" : "border-line bg-card text-subtle"
+                live ? "border-fg bg-fg text-bg" : "border-line bg-bg text-subtle"
               }`}
             >
               {String(i + 1).padStart(2, "0")}
             </span>
             <div className="pt-1.5">
-              <h2 className="text-lg font-bold tracking-tight">{s.name}</h2>
+              <h2 className="text-lg font-semibold tracking-tight">{s.name}</h2>
               <p className="mt-1 text-[15px] text-muted">{s.note}</p>
               {posts.map((p) => (
                 <Link
                   key={p.slug}
                   href={`/posts/${p.slug}/`}
-                  className="group mt-3 flex items-center justify-between gap-3 rounded-xl border border-accent-soft/40 bg-accent-tint px-4 py-3 transition-colors hover:border-accent-soft"
+                  className="group mt-3 flex items-center justify-between gap-3 rounded-xl border border-line bg-card px-4 py-3 transition-colors hover:border-accent-soft/70"
                 >
                   <span className="font-semibold">{p.title}</span>
                   <ChevronRight className="size-4 shrink-0 text-accent transition-transform group-hover:translate-x-0.5" />

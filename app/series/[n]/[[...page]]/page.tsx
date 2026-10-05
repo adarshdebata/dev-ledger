@@ -56,12 +56,12 @@ export default async function SeriesPage({ params }: Props) {
         </section>
 
         <aside>
-          <div className="rounded-2xl border border-line bg-card p-5 shadow-card lg:sticky lg:top-24">
+          <div className="rounded-2xl border border-line p-5 lg:sticky lg:top-28">
             <div className="flex items-baseline justify-between">
               <h2 className="text-sm font-semibold">Topics in this series</h2>
               <span className="font-mono text-xs text-subtle">{covered}/20</span>
             </div>
-            <ol className="scroll-thin mt-4 space-y-2.5 text-[13.5px] lg:max-h-[65vh] lg:overflow-y-auto lg:pr-1">
+            <ol className="mt-4 space-y-2.5 text-[13.5px] lg:max-h-[65vh] lg:overflow-y-auto lg:pr-1">
               {topics.map((t) => (
                 <li key={t.n} className="flex gap-2.5">
                   {t.post ? (

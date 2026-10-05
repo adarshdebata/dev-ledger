@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
-const basePath = "/dev-ledger";
+// GitHub Pages serves the site under /dev-ledger/. Locally, `pnpm dev` runs at the
+// root, so http://localhost:3000/ is the home page.
+const basePath = process.env.NODE_ENV === "production" ? "/dev-ledger" : "";
 
 const nextConfig: NextConfig = {
   output: "export",

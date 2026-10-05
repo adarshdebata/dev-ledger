@@ -35,7 +35,7 @@ Requires Node.js 22+ and pnpm.
 
 ```bash
 pnpm install
-pnpm dev     # http://localhost:3000/dev-ledger/
+pnpm dev     # http://localhost:3000/  (the /dev-ledger base path applies only to production builds)
 pnpm build   # static site in out/, plus the search index
 ```
 
@@ -67,6 +67,11 @@ Components available inside MDX live in [`components/mdx/`](components/mdx):
 `SequenceDiagram`, `FiveQuestions`, and article-specific widgets such as
 `CorsPlayground`. Code fences accept `title="file.js"`, line highlights like
 `{2,4-6}`, `// [!code ++]` diff markers and a `wrap` flag.
+
+Keep the writing plain: short sentences, everyday words. Wrap the first use of a
+technical word in `<Term id="origin">origins</Term>` to show a definition on hover
+or tap; definitions live in [`lib/glossary.ts`](lib/glossary.ts). Use
+`<Callout type="story">` for a "think of it like this" analogy.
 
 ## Deployment
 

@@ -42,9 +42,9 @@ export function OriginCompare() {
   const same = valid && diffs.length === 0;
 
   return (
-    <div className="not-prose my-8 rounded-2xl border border-line bg-card p-4 shadow-card sm:p-5">
+    <div className="not-prose my-8 rounded-2xl border border-line bg-card p-4 sm:p-5">
       <p className="text-xs font-semibold tracking-wider text-accent uppercase">Try it: are these the same origin?</p>
-      <div className="scroll-thin -mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1">
+      <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1">
         {PAIRS.map(([x, y, label]) => {
           const on = x === a && y === b;
           return (

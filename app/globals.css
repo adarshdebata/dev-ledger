@@ -3,57 +3,77 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ---------- Tokens ---------- */
+/*
+ * "Coastal technical editorial".
+ * Light: warm ivory paper and ink navy. Dark: deep navy-black and warm ivory.
+ * The only regional hint is in the colour: terracotta (laterite earth) and a coastal teal.
+ */
 
 :root {
-  --bg: #fbfbfe;
-  --bg-soft: #f4f3fa;
-  --card: #ffffff;
-  --fg: #15141f;
-  --muted: #555469;
-  --subtle: #8a899e;
-  --line: #e6e4f0;
-  --line-strong: #d3d0e3;
-  --accent: #7c3aed;
-  --accent-soft: #8b5cf6;
-  --accent-tint: rgb(139 92 246 / 0.09);
-  --ok: #059669;
-  --ok-tint: rgb(5 150 105 / 0.1);
-  --bad: #dc2626;
-  --bad-tint: rgb(220 38 38 / 0.08);
-  --warn: #b45309;
-  --warn-tint: rgb(217 119 6 / 0.1);
-  --info: #2563eb;
-  --info-tint: rgb(37 99 235 / 0.08);
-  --code-bg: #f7f6fc;
-  --shadow: 0 1px 2px rgb(21 20 31 / 0.04), 0 8px 24px -12px rgb(21 20 31 / 0.12);
-  --shadow-lg: 0 2px 4px rgb(21 20 31 / 0.04), 0 24px 48px -24px rgb(76 29 149 / 0.28);
+  --bg: #f8f5ee;
+  --bg-soft: #f1ece2;
+  --card: #fffdf9;
+  --fg: #172033;
+  --body: #222c41;
+  --muted: #4b5568;
+  --subtle: #5d667e;
+  --line: #e3ddd1;
+  --line-strong: #cec6b7;
+  --accent: #a94a2c;
+  --accent-soft: #c8643f;
+  --accent-tint: rgb(200 100 63 / 0.09);
+  --teal: #1d6b73;
+  --teal-soft: #2e8c95;
+  --teal-tint: rgb(46 140 149 / 0.09);
+  --ok: #28704d;
+  --ok-tint: rgb(47 122 85 / 0.09);
+  --bad: #b4233c;
+  --bad-tint: rgb(180 35 60 / 0.07);
+  --warn: #946000;
+  --warn-tint: rgb(201 140 20 / 0.1);
+  --info: #1d6b73;
+  --info-tint: rgb(46 140 149 / 0.09);
+  --code-bg: #eef1f5;
+  --code-line: #dce2ea;
+  --glass: rgb(248 245 238 / 0.72);
+  --shadow: 0 1px 2px rgb(23 32 51 / 0.05);
+  --shadow-lg: 0 1px 2px rgb(23 32 51 / 0.04), 0 18px 40px -24px rgb(23 32 51 / 0.24);
+  --grain-opacity: 0.05;
+  --airflow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 700' fill='none' stroke='%23cec6b7' stroke-opacity='.6'%3E%3Cpath d='M-40 140C240 90 420 200 720 150S1180 70 1640 130'/%3E%3Cpath d='M-40 205C250 160 440 262 740 214S1190 140 1640 196'/%3E%3Cpath d='M-40 270C260 232 460 322 760 278S1200 212 1640 262'/%3E%3Cpath d='M-40 335C270 302 480 380 780 340S1210 282 1640 326'/%3E%3Cpath d='M-40 400C280 372 500 438 800 402S1220 352 1640 390'/%3E%3Cpath d='M-40 465C290 442 520 496 820 464S1230 422 1640 454'/%3E%3Cpath d='M-40 530C300 512 540 554 840 526S1240 492 1640 518'/%3E%3C/svg%3E");
   color-scheme: light;
 }
 
 .dark {
-  --bg: #0a0a12;
-  --bg-soft: #0f0f1a;
-  --card: #12121d;
-  --fg: #ecebf6;
-  --muted: #a4a3ba;
-  --subtle: #74738b;
-  --line: #22213a;
-  --line-strong: #302e4d;
-  --accent: #a78bfa;
-  --accent-soft: #8b5cf6;
-  --accent-tint: rgb(139 92 246 / 0.14);
-  --ok: #34d399;
-  --ok-tint: rgb(52 211 153 / 0.1);
-  --bad: #f87171;
-  --bad-tint: rgb(248 113 113 / 0.1);
-  --warn: #fbbf24;
-  --warn-tint: rgb(251 191 36 / 0.1);
-  --info: #60a5fa;
-  --info-tint: rgb(96 165 250 / 0.1);
-  --code-bg: #0e0e18;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
-  --shadow-lg: 0 2px 4px rgb(0 0 0 / 0.3), 0 24px 48px -24px rgb(139 92 246 / 0.25);
+  --bg: #0c1220;
+  --bg-soft: #111a2b;
+  --card: #131d30;
+  --fg: #ece6da;
+  --body: #dad4c8;
+  --muted: #b3bbcb;
+  --subtle: #8f99ae;
+  --line: #1f2b40;
+  --line-strong: #2c3a55;
+  --accent: #e8916b;
+  --accent-soft: #d9774f;
+  --accent-tint: rgb(232 145 107 / 0.12);
+  --teal: #72c6c9;
+  --teal-soft: #4faab0;
+  --teal-tint: rgb(114 198 201 / 0.1);
+  --ok: #5cc79a;
+  --ok-tint: rgb(92 199 154 / 0.1);
+  --bad: #f07a8c;
+  --bad-tint: rgb(240 122 140 / 0.1);
+  --warn: #e8b65a;
+  --warn-tint: rgb(232 182 90 / 0.1);
+  --info: #72c6c9;
+  --info-tint: rgb(114 198 201 / 0.1);
+  --code-bg: #0f1726;
+  --code-line: #1e2a42;
+  --glass: rgb(12 18 32 / 0.7);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 1px 2px rgb(0 0 0 / 0.3), 0 18px 40px -24px rgb(0 0 0 / 0.75);
+  --grain-opacity: 0.07;
+  --airflow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 700' fill='none' stroke='%232c3a55' stroke-opacity='.8'%3E%3Cpath d='M-40 140C240 90 420 200 720 150S1180 70 1640 130'/%3E%3Cpath d='M-40 205C250 160 440 262 740 214S1190 140 1640 196'/%3E%3Cpath d='M-40 270C260 232 460 322 760 278S1200 212 1640 262'/%3E%3Cpath d='M-40 335C270 302 480 380 780 340S1210 282 1640 326'/%3E%3Cpath d='M-40 400C280 372 500 438 800 402S1220 352 1640 390'/%3E%3Cpath d='M-40 465C290 442 520 496 820 464S1230 422 1640 454'/%3E%3Cpath d='M-40 530C300 512 540 554 840 526S1240 492 1640 518'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 
@@ -65,6 +85,7 @@
   --color-bg-soft: var(--bg-soft);
   --color-card: var(--card);
   --color-fg: var(--fg);
+  --color-body: var(--body);
   --color-muted: var(--muted);
   --color-subtle: var(--subtle);
   --color-line: var(--line);
@@ -72,6 +93,9 @@
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-accent-tint: var(--accent-tint);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-teal-tint: var(--teal-tint);
   --color-ok: var(--ok);
   --color-ok-tint: var(--ok-tint);
   --color-bad: var(--bad);
@@ -81,6 +105,7 @@
   --color-info: var(--info);
   --color-info-tint: var(--info-tint);
   --color-code: var(--code-bg);
+  --color-code-line: var(--code-line);
 
   --shadow-card: var(--shadow);
   --shadow-lift: var(--shadow-lg);
@@ -102,9 +127,9 @@
 }
 
 @keyframes flow {
-  0%, 100% { opacity: 0.4; }
+  0%, 100% { opacity: 0.45; }
   3% { opacity: 1; }
-  14% { opacity: 0.4; }
+  14% { opacity: 0.45; }
 }
 
 @keyframes flow-bg {
@@ -117,12 +142,16 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  scroll-padding-top: 5.5rem;
+  scroll-padding-top: 6.5rem;
 }
 
 @media (prefers-reduced-motion: no-preference) {
   html { scroll-behavior: smooth; }
 }
+
+/* Scrollbars are hidden everywhere; scrolling itself still works. */
+* { scrollbar-width: none; }
+*::-webkit-scrollbar { display: none; }
 
 body {
   background: var(--bg);
@@ -133,7 +162,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-::selection { background: rgb(139 92 246 / 0.25); }
+/* A faint paper grain, so the background isn't a flat fill */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.45 0 0 0 0 0.4 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+::selection { background: rgb(200 100 63 / 0.22); }
 
 :focus-visible {
   outline: 2px solid var(--accent-soft);
@@ -141,22 +181,39 @@ body {
   border-radius: 6px;
 }
 
-@utility text-gradient {
-  background: linear-gradient(120deg, #667eea 0%, #8b5cf6 45%, #764ba2 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
+/* ---------- Utilities ---------- */
 
+/* Kept for older call sites: both are flat now, no gradients anywhere. */
 @utility bg-brand {
-  background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-color: var(--accent-soft);
 }
 
-@utility bg-grid {
-  background-image:
-    linear-gradient(to right, var(--line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
-  background-size: 44px 44px;
+@utility text-gradient {
+  color: var(--accent);
+}
+
+/* Faint airflow lines, like a wind diagram, used behind page headers */
+@utility bg-airflow {
+  background-image: var(--airflow);
+  background-repeat: no-repeat;
+  background-size: 1600px auto;
+  background-position: center top;
+}
+
+/* Glass, used only where it helps: floating nav, search, table of contents, copy buttons */
+@utility glass {
+  background-color: var(--glass);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid color-mix(in oklab, var(--line-strong) 75%, transparent);
+}
+
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 @utility container-page {
@@ -165,6 +222,22 @@ body {
   margin-inline: auto;
   padding-inline: 1rem;
   @media (width >= 40rem) { padding-inline: 1.5rem; }
+}
+
+/* ---------- Scroll reveals (only once JS has set html.reveal-ready) ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal-ready [data-reveal] {
+    transition:
+      opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+      clip-path 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .reveal-ready [data-reveal]:not(.is-revealed) { opacity: 0; }
+  .reveal-ready [data-reveal="up"]:not(.is-revealed) { transform: translateY(14px); }
+  .reveal-ready [data-reveal="scale"]:not(.is-revealed) { transform: scale(0.98); }
+  .reveal-ready [data-reveal="mask"]:not(.is-revealed) { opacity: 1; clip-path: inset(0 0 100% 0); }
+  .reveal-ready [data-reveal="fast"] { transition-duration: 0.15s; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -178,7 +251,7 @@ body {
 /* ---------- Article prose ---------- */
 
 .prose-ledger {
-  --tw-prose-body: var(--fg);
+  --tw-prose-body: var(--body);
   --tw-prose-headings: var(--fg);
   --tw-prose-lead: var(--muted);
   --tw-prose-links: var(--accent);
@@ -201,22 +274,25 @@ body {
   .prose-ledger { font-size: 1.125rem; }
 }
 
-.prose-ledger :where(p, li) { color: color-mix(in oklab, var(--fg) 88%, var(--muted)); }
+/* Dark mode reads better with a touch more air between lines */
+.dark .prose-ledger { line-height: 1.85; }
 
-.prose-ledger :where(h2) {
-  font-size: 1.6em;
-  letter-spacing: -0.025em;
-  line-height: 1.25;
-  margin-top: 2.6em;
-  margin-bottom: 0.8em;
-  font-weight: 750;
+.prose-ledger :where(p, li):not(:where(.not-prose *)) { color: var(--body); }
+
+.prose-ledger :where(h2):not(:where(.not-prose *)) {
+  font-size: 1.65em;
+  letter-spacing: -0.028em;
+  line-height: 1.22;
+  margin-top: 2.5em;
+  margin-bottom: 0.75em;
+  font-weight: 700;
 }
 
-.prose-ledger :where(h3) {
-  font-size: 1.22em;
-  letter-spacing: -0.015em;
+.prose-ledger :where(h3):not(:where(.not-prose *)) {
+  font-size: 1.25em;
+  letter-spacing: -0.018em;
   margin-top: 2em;
-  font-weight: 700;
+  font-weight: 650;
 }
 
 .prose-ledger :where(a):not(:where(.not-prose *)) {
@@ -231,12 +307,13 @@ body {
 .prose-ledger :where(a):not(:where(.not-prose *)):hover { text-decoration-color: var(--accent); }
 
 .prose-ledger :where(:not(pre) > code:not([class])) {
-  font-size: 0.86em;
+  font-size: 0.85em;
   font-weight: 500;
-  padding: 0.15em 0.4em;
-  border-radius: 0.375rem;
-  background: var(--accent-tint);
-  border: 1px solid color-mix(in oklab, var(--accent-soft) 18%, transparent);
+  padding: 0.12em 0.4em;
+  border-radius: 0.35rem;
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px solid var(--code-line);
   overflow-wrap: anywhere;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
@@ -250,7 +327,7 @@ body {
 .prose-ledger :where(blockquote):not(:where(.not-prose *)) {
   font-style: normal;
   font-weight: 500;
-  border-left-width: 3px;
+  border-left-width: 2px;
   padding-left: 1.1em;
 }
 
@@ -315,16 +392,11 @@ body {
 .code-block .line.diff.add::before { content: "+"; position: absolute; margin-left: -0.85rem; color: var(--ok); }
 .code-block .line.diff.remove::before { content: "−"; position: absolute; margin-left: -0.85rem; color: var(--bad); }
 
-/* Scrollbars that don't shout */
-.code-block pre::-webkit-scrollbar,
-.scroll-thin::-webkit-scrollbar { height: 8px; width: 8px; }
-.code-block pre::-webkit-scrollbar-thumb,
-.scroll-thin::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
-
 /* Native dialog for search */
 dialog::backdrop {
-  background: rgb(10 10 18 / 0.45);
-  backdrop-filter: blur(4px);
+  background: rgb(12 18 32 / 0.35);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 mark {

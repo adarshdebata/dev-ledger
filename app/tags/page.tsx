@@ -23,7 +23,7 @@ export default function TagsPage() {
             <li key={tag}>
               <Link
                 href={`/tags/${tag}/`}
-                className="inline-flex items-center gap-2 rounded-xl border border-line bg-card px-4 py-2.5 text-[15px] font-medium shadow-card transition-all hover:-translate-y-0.5 hover:border-accent-soft/60"
+                className="inline-flex items-center gap-2 rounded-xl border border-line px-4 py-2.5 text-[15px] font-medium transition-colors hover:border-line-strong hover:bg-card"
               >
                 <span className="text-accent">#</span>
                 {tag}

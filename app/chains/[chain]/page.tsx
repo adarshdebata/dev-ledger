@@ -31,8 +31,8 @@ export default async function ChainPage({ params }: Props) {
       </PageHeader>
       <div className="container-page grid grid-cols-1 gap-12 py-12 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <ChainTimeline chain={c} titles={titles} />
-        <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-          <div className="rounded-2xl border border-line bg-card p-5 shadow-card">
+        <aside className="space-y-4 lg:sticky lg:top-28 lg:self-start">
+          <div className="rounded-2xl border border-line p-5">
             <p className="text-sm font-semibold">How to read a chain</p>
             <p className="mt-2 text-sm leading-relaxed text-muted">
               Each stage is a stop on the way. Highlighted stages already have an article; the rest are on the
@@ -41,7 +41,7 @@ export default async function ChainPage({ params }: Props) {
           </div>
           <Link
             href={`/chains/${other.id}/`}
-            className="block rounded-2xl border border-line bg-card p-5 shadow-card transition-colors hover:border-line-strong"
+            className="block rounded-2xl border border-line p-5 transition-colors hover:border-line-strong hover:bg-card"
           >
             <p className="text-xs text-subtle">The other chain</p>
             <p className="mt-1 font-semibold">{other.title} →</p>

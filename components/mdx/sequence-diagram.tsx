@@ -101,7 +101,7 @@ export function SequenceDiagram({ title, actors, steps }: { title?: string; acto
       tabIndex={0}
       onKeyDown={onKey}
       aria-label={title ? `Sequence diagram: ${title}` : "Sequence diagram"}
-      className="not-prose my-9 overflow-hidden rounded-2xl border border-line bg-card shadow-card outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+      className="not-prose my-9 overflow-hidden rounded-2xl border border-line bg-card outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
     >
       <figcaption className="flex items-center justify-between gap-3 border-b border-line bg-bg-soft/70 px-4 py-2.5">
         <span className="truncate text-[13px] font-semibold">{title}</span>
@@ -233,7 +233,7 @@ export function SequenceDiagram({ title, actors, steps }: { title?: string; acto
           <button
             type="button"
             onClick={togglePlay}
-            className="bg-brand mx-1 grid size-9 place-items-center rounded-full text-white shadow-lift transition-transform hover:scale-105"
+            className="mx-1 grid size-9 place-items-center rounded-full bg-fg text-bg transition-transform hover:scale-105"
             aria-label={playing ? "Pause" : step >= last ? "Replay" : "Play"}
           >
             {playing ? <Pause className="size-4" /> : step >= last ? <RotateCcw className="size-4" /> : <Play className="ml-0.5 size-4" />}

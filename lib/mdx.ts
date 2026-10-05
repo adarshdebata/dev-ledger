@@ -48,7 +48,7 @@ export async function renderMdx(source: string) {
       [
         rehypeShiki,
         {
-          themes: { light: "github-light", dark: "github-dark-dimmed" },
+          themes: { light: "vitesse-light", dark: "vitesse-dark" },
           defaultColor: false,
           defaultLanguage: "text",
           fallbackLanguage: "text",

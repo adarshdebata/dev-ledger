@@ -18,7 +18,7 @@ export function Pagination({ base, page, pages }: { base: string; page: number; 
           key={n}
           href={href(n)}
           aria-current={n === page ? "page" : undefined}
-          className={`${cls} ${n === page ? "border-transparent bg-brand text-white" : "border-line text-muted hover:border-line-strong"}`}
+          className={`${cls} ${n === page ? "border-fg bg-fg text-bg" : "border-line text-muted hover:border-line-strong"}`}
         >
           {n}
         </Link>

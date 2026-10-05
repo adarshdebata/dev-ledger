@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   AlertTriangle,
   ArrowUpRight,
+  BookOpen,
   Bug,
   CircleAlert,
   Eye,
@@ -84,14 +85,9 @@ type PreProps = React.HTMLAttributes<HTMLPreElement> & { "data-title"?: string; 
 
 export function CodeBlock({ "data-title": title, "data-lang": lang = "text", ...props }: PreProps) {
   return (
-    <figure className="code-block not-prose my-7 overflow-hidden rounded-xl border border-line bg-code shadow-card">
-      <figcaption className="flex h-10 items-center justify-between gap-3 border-b border-line bg-bg-soft/70 pr-1.5 pl-4">
+    <figure className="code-block not-prose my-7 overflow-hidden rounded-xl border border-code-line bg-code">
+      <figcaption className="flex h-10 items-center justify-between gap-3 border-b border-code-line pr-1.5 pl-4">
         <span className="flex min-w-0 items-center gap-2.5">
-          <span className="flex gap-1.5" aria-hidden="true">
-            <span className="size-2.5 rounded-full bg-line-strong" />
-            <span className="size-2.5 rounded-full bg-line-strong" />
-            <span className="size-2.5 rounded-full bg-line-strong" />
-          </span>
           <span className="truncate font-mono text-xs text-muted">{title ?? langLabels[lang] ?? lang}</span>
         </span>
         <CopyButton />
@@ -103,18 +99,19 @@ export function CodeBlock({ "data-title": title, "data-lang": lang = "text", ...
 
 export function Table(props: React.TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="scroll-thin my-7 overflow-x-auto">
+    <div className="my-7 overflow-x-auto">
       <table {...props} className="my-0" />
     </div>
   );
 }
 
 const calloutStyles = {
-  note: { icon: Info, cls: "border-info/30 bg-info-tint", iconCls: "text-info", label: "Note" },
-  tip: { icon: Lightbulb, cls: "border-ok/30 bg-ok-tint", iconCls: "text-ok", label: "Tip" },
-  warning: { icon: AlertTriangle, cls: "border-warn/30 bg-warn-tint", iconCls: "text-warn", label: "Watch out" },
-  danger: { icon: XCircle, cls: "border-bad/30 bg-bad-tint", iconCls: "text-bad", label: "Danger" },
-  insight: { icon: Sparkles, cls: "border-accent-soft/40 bg-accent-tint", iconCls: "text-accent", label: "Under the hood" },
+  note: { icon: Info, cls: "border-info bg-info-tint", iconCls: "text-info", label: "Note" },
+  tip: { icon: Lightbulb, cls: "border-ok bg-ok-tint", iconCls: "text-ok", label: "Tip" },
+  warning: { icon: AlertTriangle, cls: "border-warn bg-warn-tint", iconCls: "text-warn", label: "Watch out" },
+  danger: { icon: XCircle, cls: "border-bad bg-bad-tint", iconCls: "text-bad", label: "Be careful" },
+  insight: { icon: Sparkles, cls: "border-accent-soft bg-accent-tint", iconCls: "text-accent", label: "Under the hood" },
+  story: { icon: BookOpen, cls: "border-teal-soft bg-teal-tint", iconCls: "text-teal", label: "Think of it like this" },
 };
 
 export function Callout({
@@ -129,7 +126,7 @@ export function Callout({
   const s = calloutStyles[type];
   const Icon = s.icon;
   return (
-    <aside className={`my-7 rounded-xl border px-5 py-4 ${s.cls}`}>
+    <aside className={`my-8 rounded-r-xl border-l-[3px] px-5 py-4 ${s.cls}`}>
       <p className="not-prose flex items-center gap-2 text-[15px] font-semibold">
         <Icon className={`size-[18px] shrink-0 ${s.iconCls}`} />
         {title ?? s.label}
@@ -166,16 +163,16 @@ const fiveQuestions = [
   { key: "sees", q: "What does the developer see?", icon: Eye },
   { key: "underneath", q: "What is actually happening underneath?", icon: Layers },
   { key: "breaks", q: "What breaks when it fails?", icon: Bug },
-  { key: "misconception", q: "What misconception do developers commonly have?", icon: CircleAlert },
+  { key: "misconception", q: "What do developers often get wrong?", icon: CircleAlert },
 ] as const;
 
 type FiveProps = Record<(typeof fiveQuestions)[number]["key"], string>;
 
 export function FiveQuestions(props: FiveProps) {
   return (
-    <div className="not-prose my-8 overflow-hidden rounded-2xl border border-line bg-card shadow-card">
-      <div className="bg-brand px-5 py-3.5 text-white">
-        <p className="text-sm font-semibold">The five questions, answered</p>
+    <div className="not-prose my-8 overflow-hidden rounded-2xl border border-line">
+      <div className="border-b border-line bg-bg-soft px-5 py-3.5">
+        <p className="eyebrow text-accent">The five questions, answered</p>
       </div>
       <dl className="divide-y divide-line">
         {fiveQuestions.map(({ key, q, icon: Icon }, i) => (
@@ -236,7 +233,7 @@ type NetRow = { name: string; method: string; status: string; type: string; bad?
 /** A faithful-looking slice of Chrome DevTools: console messages and network rows. */
 export function DevTools({ console: lines = [], network = [] }: { console?: ConsoleLine[]; network?: NetRow[] }) {
   return (
-    <div className="not-prose my-8 overflow-hidden rounded-xl border border-line bg-card font-mono text-[12.5px] shadow-card">
+    <div className="not-prose my-8 overflow-hidden rounded-xl border border-line bg-card font-mono text-[12.5px]">
       <div className="flex items-center gap-4 border-b border-line bg-bg-soft px-3 text-[12px] text-muted">
         <span className={`py-2 ${lines.length ? "border-b-2 border-accent-soft text-fg" : ""}`}>Console</span>
         <span className={`py-2 ${!lines.length ? "border-b-2 border-accent-soft text-fg" : ""}`}>Network</span>
@@ -266,7 +263,7 @@ export function DevTools({ console: lines = [], network = [] }: { console?: Cons
         </div>
       ))}
       {network.length > 0 && (
-        <div className="scroll-thin overflow-x-auto">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[26rem] text-left">
             <thead className="border-b border-line bg-bg-soft/60 text-[11.5px] text-subtle">
               <tr>

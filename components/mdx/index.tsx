@@ -5,6 +5,7 @@ import { CodeTabs, Predict } from "./client-bits";
 import { CorsPlayground } from "./lazy";
 import { OriginCompare } from "./origin-compare";
 import { SequenceDiagram } from "./sequence-diagram";
+import { Term } from "./term";
 import { UrlAnatomy } from "./url-anatomy";
 
 /** Component map for a post. Relative image paths resolve to that post's folder. */
@@ -36,6 +37,7 @@ export function mdxComponents(slug: string): MDXComponents {
     SequenceDiagram,
     OriginCompare,
     UrlAnatomy,
+    Term,
     CorsPlayground,
   };
 }

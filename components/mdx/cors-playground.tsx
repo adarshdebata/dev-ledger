@@ -125,18 +125,18 @@ export default function CorsPlayground() {
   const next = () => ++section;
 
   return (
-    <div className="not-prose my-10 overflow-hidden rounded-2xl border border-line bg-card shadow-lift">
+    <div className="not-prose my-10 overflow-hidden rounded-2xl border border-line bg-card">
       {/* Title + presets */}
       <div className="border-b border-line bg-bg-soft/70 px-4 pt-4 pb-3 sm:px-5">
         <div className="flex items-center gap-2">
-          <span className="bg-brand grid size-7 place-items-center rounded-lg text-white">
+          <span className="grid size-7 place-items-center rounded-lg bg-fg text-bg">
             <Sparkles className="size-4" />
           </span>
           <p className="font-semibold">CORS playground</p>
           <span className="ml-auto hidden font-mono text-[11px] text-subtle sm:inline">simulated in your browser · no network</span>
         </div>
         <p className="mt-2 text-[13px] text-muted">Start from a scenario, then change one thing at a time.</p>
-        <div className="scroll-thin -mx-1 mt-2.5 flex gap-1.5 overflow-x-auto px-1 pb-1">
+        <div className="-mx-1 mt-2.5 flex gap-1.5 overflow-x-auto px-1 pb-1">
           {PRESETS.map((p, i) => (
             <button
               key={p.name}
@@ -146,7 +146,7 @@ export default function CorsPlayground() {
                 setC(p.config);
               }}
               className={`shrink-0 rounded-full border px-3 py-1.5 text-[12.5px] font-medium whitespace-nowrap transition-colors ${
-                preset === i ? "border-transparent bg-brand text-white" : "border-line bg-card text-muted hover:border-line-strong hover:text-fg"
+                preset === i ? "border-fg bg-fg text-bg" : "border-line bg-card text-muted hover:border-line-strong hover:text-fg"
               }`}
             >
               {p.name}
@@ -738,7 +738,7 @@ function CodeView({ fetch, server }: { fetch: string; server: string }) {
           </button>
         ))}
       </div>
-      <pre className="scroll-thin overflow-x-auto rounded-b-lg border border-line bg-code px-4 py-3 font-mono text-[12px] leading-[1.75] text-fg">
+      <pre className="overflow-x-auto rounded-b-lg border border-line bg-code px-4 py-3 font-mono text-[12px] leading-[1.75] text-fg">
         {tab === "fetch" ? fetch : server}
       </pre>
       <p className="mt-2 text-[11.5px] text-subtle">

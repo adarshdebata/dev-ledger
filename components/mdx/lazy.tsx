@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 function Placeholder({ label }: { label: string }) {
   return (
-    <div className="not-prose my-10 grid h-[34rem] place-items-center rounded-2xl border border-line bg-card shadow-card">
+    <div className="not-prose my-10 grid h-[34rem] place-items-center rounded-2xl border border-line bg-card">
       <div className="flex flex-col items-center gap-3 text-sm text-subtle">
         <span className="size-6 animate-spin rounded-full border-2 border-line-strong border-t-accent-soft motion-reduce:animate-none" />
         Loading the {label}…
