@@ -1,0 +1,335 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------- Tokens ---------- */
+
+:root {
+  --bg: #fbfbfe;
+  --bg-soft: #f4f3fa;
+  --card: #ffffff;
+  --fg: #15141f;
+  --muted: #555469;
+  --subtle: #8a899e;
+  --line: #e6e4f0;
+  --line-strong: #d3d0e3;
+  --accent: #7c3aed;
+  --accent-soft: #8b5cf6;
+  --accent-tint: rgb(139 92 246 / 0.09);
+  --ok: #059669;
+  --ok-tint: rgb(5 150 105 / 0.1);
+  --bad: #dc2626;
+  --bad-tint: rgb(220 38 38 / 0.08);
+  --warn: #b45309;
+  --warn-tint: rgb(217 119 6 / 0.1);
+  --info: #2563eb;
+  --info-tint: rgb(37 99 235 / 0.08);
+  --code-bg: #f7f6fc;
+  --shadow: 0 1px 2px rgb(21 20 31 / 0.04), 0 8px 24px -12px rgb(21 20 31 / 0.12);
+  --shadow-lg: 0 2px 4px rgb(21 20 31 / 0.04), 0 24px 48px -24px rgb(76 29 149 / 0.28);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0a0a12;
+  --bg-soft: #0f0f1a;
+  --card: #12121d;
+  --fg: #ecebf6;
+  --muted: #a4a3ba;
+  --subtle: #74738b;
+  --line: #22213a;
+  --line-strong: #302e4d;
+  --accent: #a78bfa;
+  --accent-soft: #8b5cf6;
+  --accent-tint: rgb(139 92 246 / 0.14);
+  --ok: #34d399;
+  --ok-tint: rgb(52 211 153 / 0.1);
+  --bad: #f87171;
+  --bad-tint: rgb(248 113 113 / 0.1);
+  --warn: #fbbf24;
+  --warn-tint: rgb(251 191 36 / 0.1);
+  --info: #60a5fa;
+  --info-tint: rgb(96 165 250 / 0.1);
+  --code-bg: #0e0e18;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 2px 4px rgb(0 0 0 / 0.3), 0 24px 48px -24px rgb(139 92 246 / 0.25);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-bg: var(--bg);
+  --color-bg-soft: var(--bg-soft);
+  --color-card: var(--card);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-tint: var(--accent-tint);
+  --color-ok: var(--ok);
+  --color-ok-tint: var(--ok-tint);
+  --color-bad: var(--bad);
+  --color-bad-tint: var(--bad-tint);
+  --color-warn: var(--warn);
+  --color-warn-tint: var(--warn-tint);
+  --color-info: var(--info);
+  --color-info-tint: var(--info-tint);
+  --color-code: var(--code-bg);
+
+  --shadow-card: var(--shadow);
+  --shadow-lift: var(--shadow-lg);
+
+  --animate-flow: flow 6.5s linear infinite;
+  --animate-flow-bg: flow-bg 6.5s linear infinite;
+  --animate-fade-up: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-grow-x: grow-x 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes grow-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes flow {
+  0%, 100% { opacity: 0.4; }
+  3% { opacity: 1; }
+  14% { opacity: 0.4; }
+}
+
+@keyframes flow-bg {
+  0%, 100% { opacity: 0; }
+  3% { opacity: 1; }
+  14% { opacity: 0; }
+}
+
+/* ---------- Base ---------- */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-padding-top: 5.5rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection { background: rgb(139 92 246 / 0.25); }
+
+:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@utility text-gradient {
+  background: linear-gradient(120deg, #667eea 0%, #8b5cf6 45%, #764ba2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility bg-brand {
+  background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, var(--line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+@utility container-page {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+  @media (width >= 40rem) { padding-inline: 1.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- Article prose ---------- */
+
+.prose-ledger {
+  --tw-prose-body: var(--fg);
+  --tw-prose-headings: var(--fg);
+  --tw-prose-lead: var(--muted);
+  --tw-prose-links: var(--accent);
+  --tw-prose-bold: var(--fg);
+  --tw-prose-counters: var(--subtle);
+  --tw-prose-bullets: var(--accent-soft);
+  --tw-prose-hr: var(--line);
+  --tw-prose-quotes: var(--fg);
+  --tw-prose-quote-borders: var(--accent-soft);
+  --tw-prose-captions: var(--subtle);
+  --tw-prose-code: var(--fg);
+  --tw-prose-th-borders: var(--line-strong);
+  --tw-prose-td-borders: var(--line);
+  font-size: 1.0625rem;
+  line-height: 1.8;
+  max-width: none;
+}
+
+@media (width >= 48rem) {
+  .prose-ledger { font-size: 1.125rem; }
+}
+
+.prose-ledger :where(p, li) { color: color-mix(in oklab, var(--fg) 88%, var(--muted)); }
+
+.prose-ledger :where(h2) {
+  font-size: 1.6em;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  margin-top: 2.6em;
+  margin-bottom: 0.8em;
+  font-weight: 750;
+}
+
+.prose-ledger :where(h3) {
+  font-size: 1.22em;
+  letter-spacing: -0.015em;
+  margin-top: 2em;
+  font-weight: 700;
+}
+
+.prose-ledger :where(a):not(:where(.not-prose *)) {
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 35%, transparent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  font-weight: 550;
+  transition: text-decoration-color 0.2s;
+}
+
+.prose-ledger :where(a):not(:where(.not-prose *)):hover { text-decoration-color: var(--accent); }
+
+.prose-ledger :where(:not(pre) > code:not([class])) {
+  font-size: 0.86em;
+  font-weight: 500;
+  padding: 0.15em 0.4em;
+  border-radius: 0.375rem;
+  background: var(--accent-tint);
+  border: 1px solid color-mix(in oklab, var(--accent-soft) 18%, transparent);
+  overflow-wrap: anywhere;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.prose-ledger :where(td:first-child > code:not([class])) { white-space: nowrap; overflow-wrap: normal; }
+
+.prose-ledger :where(:not(pre) > code:not([class]))::before,
+.prose-ledger :where(:not(pre) > code:not([class]))::after { content: none; }
+
+.prose-ledger :where(blockquote):not(:where(.not-prose *)) {
+  font-style: normal;
+  font-weight: 500;
+  border-left-width: 3px;
+  padding-left: 1.1em;
+}
+
+.prose-ledger :where(blockquote p):not(:where(.not-prose *))::before,
+.prose-ledger :where(blockquote p):not(:where(.not-prose *))::after { content: none; }
+
+.prose-ledger :where(table):not(:where(.not-prose *)) { font-size: 0.9em; }
+.prose-ledger :where(thead th):not(:where(.not-prose *)) { font-weight: 650; }
+
+/* ---------- Code blocks (Shiki dual theme) ---------- */
+
+.shiki,
+.shiki span { color: var(--shiki-light); }
+
+.dark .shiki,
+.dark .shiki span { color: var(--shiki-dark); }
+
+.code-block pre {
+  margin: 0;
+  padding: 1rem 0;
+  background: var(--code-bg);
+  font-size: 0.84rem;
+  line-height: 1.7;
+  overflow-x: auto;
+  border-radius: 0;
+}
+
+.code-block pre code {
+  display: grid;
+  min-width: 100%;
+  width: max-content;
+  font-family: var(--font-mono);
+}
+
+.code-block .line {
+  padding-inline: 1.1rem;
+  border-left: 2px solid transparent;
+}
+
+.code-block .line:empty::before { content: " "; }
+
+.code-block pre[data-wrap] { white-space: pre-wrap; }
+.code-block pre[data-wrap] code { width: auto; }
+.code-block pre[data-wrap] .line { overflow-wrap: anywhere; }
+
+.code-block .line.highlighted {
+  background: var(--accent-tint);
+  border-left-color: var(--accent-soft);
+}
+
+.code-block .line.diff.add {
+  background: var(--ok-tint);
+  border-left-color: var(--ok);
+}
+
+.code-block .line.diff.remove {
+  background: var(--bad-tint);
+  border-left-color: var(--bad);
+  opacity: 0.75;
+}
+
+.code-block .line.diff.add::before { content: "+"; position: absolute; margin-left: -0.85rem; color: var(--ok); }
+.code-block .line.diff.remove::before { content: "−"; position: absolute; margin-left: -0.85rem; color: var(--bad); }
+
+/* Scrollbars that don't shout */
+.code-block pre::-webkit-scrollbar,
+.scroll-thin::-webkit-scrollbar { height: 8px; width: 8px; }
+.code-block pre::-webkit-scrollbar-thumb,
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
+
+/* Native dialog for search */
+dialog::backdrop {
+  background: rgb(10 10 18 / 0.45);
+  backdrop-filter: blur(4px);
+}
+
+mark {
+  background: var(--accent-tint);
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 0 2px;
+}

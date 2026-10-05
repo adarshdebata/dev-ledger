@@ -1,0 +1,48 @@
+{
+  "name": "dev-ledger",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A running record of backend engineering: practical, interactive deep dives for developers, from students to seniors.",
+  "author": "Adarsh Kumar Debata",
+  "license": "MIT",
+  "repository": "github:adarshdebata/dev-ledger",
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/copy-content-assets.mjs && next dev",
+    "build": "node scripts/copy-content-assets.mjs && next build && pagefind --site out",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mdx-js/mdx": "^3.1.1",
+    "@shikijs/rehype": "^4.5.0",
+    "@shikijs/transformers": "^4.5.0",
+    "clsx": "^2.1.1",
+    "gray-matter": "^4.0.3",
+    "lucide-react": "^1.51.0",
+    "motion": "^14.0.0",
+    "next": "16.3.8",
+    "next-themes": "^0.4.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "rehype-slug": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "shiki": "^4.5.0",
+    "unist-util-visit": "^5.1.0"
+  },
+  "devDependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/typography": "^0.5.20",
+    "@types/hast": "^3.0.5",
+    "@types/mdx": "^2.0.14",
+    "@types/node": "^24.19.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "pagefind": "^1.5.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "6.0.3"
+  }
+}

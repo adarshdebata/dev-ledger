@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# next.js build output
+.next/
+out/
+public/posts/
+next-env.d.ts
+*.tsbuildinfo
+
+# env and logs
+.env*
+*.log
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# local Claude Code brief (not published)
+CLAUDE.md
