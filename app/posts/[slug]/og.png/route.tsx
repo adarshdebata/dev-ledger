@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ImageResponse } from "next/og";
+import { hawk } from "@/components/logo";
 import { roadmapLabel } from "@/components/post-card";
 import { getAllPosts, getPost } from "@/lib/posts";
 import { getChain, getSeries } from "@/lib/site";
@@ -47,13 +48,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <svg width="46" height="46" viewBox="0 0 32 32">
-            <path
-              fill={INK}
-              fillRule="evenodd"
-              d="M5.5 29 7 15.5 12.5 7.5 19.5 5.5l5 2.6 1.6 2.6-.9 1.9-3.5 1-.6 6-1.3 4-1.4-4-.7-4-4.6 4.3L11.5 29ZM18.1 10.1l4.2-.8a2.15 2.15 0 0 1-4.2.8Z"
-            />
-            <path d="M26.3 10.6l4.3 4.5-3.9 4" fill="none" stroke={TERRACOTTA} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="miter" />
+          <svg width="54" height="54" viewBox="0 0 64 64">
+            <path fill={INK} d={hawk.head} />
+            <path fill={TERRACOTTA} d={hawk.beak} />
+            <circle cx={hawk.eye.cx} cy={hawk.eye.cy} r={hawk.eye.r} fill={TERRACOTTA} />
+            <path fill={INK} d={hawk.brow} />
+            <circle cx={hawk.pupil.cx} cy={hawk.pupil.cy} r={hawk.pupil.r} fill="#141c2e" />
+            <circle cx={hawk.glint.cx} cy={hawk.glint.cy} r={hawk.glint.r} fill={IVORY} />
           </svg>
           <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: 5 }}>DEV LEDGER</div>
           <div style={{ marginLeft: "auto", fontSize: 22, color: MUTED }}>{`Series ${series.n} · ${series.title}`}</div>

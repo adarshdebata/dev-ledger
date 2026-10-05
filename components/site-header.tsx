@@ -67,9 +67,6 @@ export function SiteHeader() {
 
           <div className="ml-auto flex items-center gap-1">
             <Search />
-            <a href={`${base}/rss.xml`} className={`${iconBtn} hidden sm:grid`} aria-label="RSS feed">
-              <Rss className="size-[17px]" />
-            </a>
             <a href="https://github.com/adarshdebata/dev-ledger" className={`${iconBtn} hidden sm:grid`} aria-label="Source on GitHub">
               <GitHubIcon className="size-[17px]" />
             </a>
