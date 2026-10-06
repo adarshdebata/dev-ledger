@@ -2,7 +2,9 @@ import type { MDXComponents } from "mdx/types";
 import { withBase } from "@/lib/site";
 import { Callout, CodeBlock, Compare, DevTools, FiveQuestions, H2, H3, SmartLink, Step, Steps, Table } from "./basics";
 import { CodeTabs, Predict } from "./client-bits";
-import { CorsPlayground } from "./lazy";
+import { Interview, Question } from "./interview";
+import { CorsPlayground, HelmetLab } from "./lazy";
+import { Quiz } from "./quiz";
 import { OriginCompare } from "./origin-compare";
 import { SequenceDiagram } from "./sequence-diagram";
 import { Term } from "./term";
@@ -39,5 +41,9 @@ export function mdxComponents(slug: string): MDXComponents {
     UrlAnatomy,
     Term,
     CorsPlayground,
+    HelmetLab,
+    Quiz,
+    Interview,
+    Question,
   };
 }

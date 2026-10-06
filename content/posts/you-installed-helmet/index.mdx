@@ -1,0 +1,439 @@
+---
+title: "You Installed Helmet. What Did It Actually Change?"
+subtitle: "One line of code. Twelve new headers, one removed. Here's what each one asks the browser to do, and what Helmet can't do at all."
+date: 2026-10-06
+series: 2
+roadmap: [21]
+chain: request
+tags: [security, http, express, helmet, browser]
+summary: "Helmet doesn't scan, filter or block anything on your server. It adds twelve response headers and removes one. Here's what each header asks the browser to do, which ones still matter, and which ones can quietly break your own site."
+---
+
+**You use it every day. But do you actually know what happens underneath?** Almost every Express tutorial has this line:
+
+```js title="server.js"
+import helmet from 'helmet';
+
+app.use(helmet());
+```
+
+The security scanner goes quiet, a checklist item turns green, and you move on. But what did that line actually *do*? Does Helmet now check every request? Filter attacks? Block hackers?
+
+Let's look at a response before and after. This is real output from Express 5 with Helmet 8:
+
+```diff title="Response headers, before and after app.use(helmet())" wrap
+  HTTP/1.1 200 OK
+- X-Powered-By: Express
++ Content-Security-Policy: default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests
++ Cross-Origin-Opener-Policy: same-origin
++ Cross-Origin-Resource-Policy: same-origin
++ Origin-Agent-Cluster: ?1
++ Referrer-Policy: no-referrer
++ Strict-Transport-Security: max-age=31536000; includeSubDomains
++ X-Content-Type-Options: nosniff
++ X-DNS-Prefetch-Control: off
++ X-Download-Options: noopen
++ X-Frame-Options: SAMEORIGIN
++ X-Permitted-Cross-Domain-Policies: none
++ X-XSS-Protection: 0
+  Content-Type: application/json; charset=utf-8
+```
+
+That's the whole change: twelve <Term id="header">headers</Term> added and one removed. Your routes, your data and the requests themselves are untouched.
+
+<Callout type="story" title="The short answer">
+Helmet doesn't guard your server. It hands every page to the browser along with a list of house rules: *only run scripts from my own files, never show me inside another site's frame, never guess what a file is, always use HTTPS*. Helmet only writes the list. **The browser is the one that follows it.** That's why Helmet protects people using browsers, and why it does nothing against someone using `curl`.
+</Callout>
+
+## What the developer sees
+
+Usually, nothing. The page looks the same, the API returns the same JSON, and the tests pass. Helmet's effects only show up when one of its rules is broken, and then they show up in the browser console. These are the real messages Chrome prints:
+
+<DevTools
+  console={[
+    { level: "error", text: "Executing inline script violates the following Content Security Policy directive 'script-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-…'), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked." },
+    { level: "error", text: "Framing 'https://app.example.com/' violates the following Content Security Policy directive: \"frame-ancestors 'self'\". The request has been blocked." },
+    { level: "error", text: "Refused to execute script from 'https://app.example.com/uploads/notes.txt' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled." },
+    { level: "error", text: "Failed to load resource: net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin" },
+  ]}
+/>
+
+Some of these are attacks being stopped. Others are *your own* features breaking: an analytics snippet, an image from your API, a payment popup. It's the same mechanism with very different news, and by the end you'll be able to tell them apart.
+
+## The problem it solves: browsers trust too much by default
+
+Browsers were built to be forgiving. Out of the box, a browser will:
+
+- run any `<script>` that appears in a page, even one an attacker slipped into a comment (<Term id="xss">XSS</Term>);
+- let any other website show your page inside an <Term id="iframe">iframe</Term> (<Term id="clickjacking">clickjacking</Term>);
+- guess what a file is when its label looks wrong, and sometimes run a text file as code;
+- try plain `http://` first when someone types your address, which a <Term id="mitm">man-in-the-middle</Term> on public Wi-Fi can hijack;
+- tell other sites which page a user came from.
+
+These defaults can't simply be changed, because millions of old websites depend on them. So browsers added the opposite switch: a site can send headers that say *"for my pages, be strict"*. That's all security headers are, and Helmet is a convenient way to send a sensible set of them.
+
+## What's actually happening underneath
+
+### Helmet is a list of `setHeader` calls
+
+Open Helmet's source and the part that runs on each request is tiny. It's a chain of small functions, and each one calls `res.setHeader(...)`. One calls `res.removeHeader('X-Powered-By')`. That's all. Written by hand, `helmet()` boils down to this:
+
+```js title="what app.use(helmet()) does on every request (simplified)"
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', "default-src 'self';base-uri 'self';…");
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('Origin-Agent-Cluster', '?1');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-DNS-Prefetch-Control', 'off');
+  res.setHeader('X-Download-Options', 'noopen');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  res.setHeader('X-XSS-Protection', '0');
+  res.removeHeader('X-Powered-By');
+  next();
+});
+```
+
+Notice what's missing. It never reads the request: not the body, not the URL, not the user. It never blocks anything. Every protection happens later, inside the browser, when it reads these headers.
+
+### Watch an attack meet the policy
+
+Here's a stored <Term id="xss">XSS</Term> attack against a site with a bug: it shows comments without escaping them first. Helmet doesn't fix that bug. Press play and watch where the attack actually stops:
+
+<SequenceDiagram
+  title="A stored XSS attack meets Content-Security-Policy"
+  actors={[
+    { id: "attacker", label: "Attacker", sub: "posts a comment", icon: "attacker" },
+    { id: "browser", label: "Reader", sub: "their browser", icon: "browser" },
+    { id: "api", label: "Your server", sub: "Express + Helmet", icon: "server" },
+    { id: "db", label: "Database", sub: "comments", icon: "db" },
+  ]}
+  steps={[
+    { from: "attacker", to: "api", label: "POST comment", tone: "warn", caption: "The attacker posts a comment containing `<script>…</script>`. Your server has a bug: it doesn't escape comments before showing them." },
+    { from: "api", to: "db", label: "INSERT", caption: "Helmet never looks at request bodies, so the comment is saved exactly as written, script and all." },
+    { from: "browser", to: "api", label: "GET /post/42", caption: "Later, a normal reader opens the post." },
+    { from: "api", to: "api", label: "+ 12 headers", tone: "ok", caption: "Before your route runs, Helmet adds its headers to the response. It still hasn't looked at the comment." },
+    { from: "api", to: "browser", label: "200 + CSP", caption: "The page goes out with the attacker's script inside it. Helmet can't remove it; it only added a policy next to it.", detail: "HTTP/1.1 200 OK\n+ Content-Security-Policy: …script-src 'self';script-src-attr 'none'…\nContent-Type: text/html\n# …<p>Nice post!<script>steal()</script></p>…" },
+    { from: "browser", to: "browser", label: "CSP check ✗", tone: "bad", caption: "The browser reads the policy: scripts may only come from this site's own files, never written inline in the page. The attacker's inline script breaks that rule." },
+    { from: "browser", to: "browser", label: "blocked", tone: "ok", caption: "The browser refuses to run it and logs a CSP error. The reader is safe. But the bug is still in your server, and the attacker's script is still in your database." },
+  ]}
+/>
+
+That last step is the whole story of Helmet. **The protection is real, but it lives in the reader's browser.** The bug that let the script in is still yours to fix.
+
+### The headers, one by one
+
+#### Content-Security-Policy: the big one
+
+The <Term id="csp">Content-Security-Policy</Term> (CSP) is a list of rules for what a page may load and run. Here's Helmet's default policy, in plain words:
+
+| Rule | What it tells the browser |
+| --- | --- |
+| `default-src 'self'` | By default, load things only from this site. |
+| `script-src 'self'` | Run scripts only from this site's own files. No inline `<script>` blocks, no other domains. |
+| `script-src-attr 'none'` | Ignore inline event handlers like `onclick="…"`. |
+| `style-src 'self' https: 'unsafe-inline'` | Styles may come from this site, any HTTPS address, or inline. This one is deliberately relaxed. |
+| `img-src 'self' data:` | Images only from this site, or embedded `data:` images. |
+| `font-src 'self' https: data:` | Fonts from this site, any HTTPS address, or `data:`. |
+| `object-src 'none'` | No plugins such as Flash or Java applets, ever. |
+| `base-uri 'self'` | Nobody can inject a `<base>` tag that points your relative links at another site. |
+| `form-action 'self'` | Forms on this page can only submit to this site. |
+| `frame-ancestors 'self'` | Only this site may show this page in a frame. |
+| `upgrade-insecure-requests` | Quietly switch any `http://` address the page uses to `https://`. |
+
+`script-src 'self'` does the heavy lifting against XSS. Most attacks need to run code written *inline* in the page, and this rule refuses all of it. If you need an inline script of your own, give it a <Term id="nonce">nonce</Term> rather than switching the protection off.
+
+#### Strict-Transport-Security: always HTTPS
+
+`Strict-Transport-Security: max-age=31536000; includeSubDomains` tells the browser: *for the next year (31,536,000 seconds), only ever talk to this site, and every subdomain of it, over HTTPS*. This is <Term id="hsts">HSTS</Term>. After the first visit, typing `example.com` or clicking an `http://` link no longer sends a plain-HTTP request at all. The browser upgrades it before anything leaves the machine, and DevTools shows this as a `307 Internal Redirect`.
+
+Two details matter. The browser only accepts this header over HTTPS, so it can't help on the very first visit; the [HSTS preload list](https://hstspreload.org/) closes that gap, and Helmet doesn't opt you in by default. And once a browser has seen it, you can't take it back early: every visitor's browser keeps it for the full year.
+
+#### X-Content-Type-Options: don't guess
+
+Every file comes with a label saying what it is: its <Term id="mime-type">MIME type</Term>. When the label looks wrong, browsers used to *guess* from the content, which is called "sniffing". That lets an attacker upload `notes.txt` that's really JavaScript, then load it with `<script src>`. `nosniff` says: trust the label, never guess. In Chrome, without it the text file runs as code. With it, you get the error shown earlier.
+
+#### X-Frame-Options and frame-ancestors: no hidden frames
+
+Both stop other sites from loading your page inside an iframe, which is the trick behind <Term id="clickjacking">clickjacking</Term>. `frame-ancestors` is the modern rule and wins when both are present. `X-Frame-Options: SAMEORIGIN` is the older version, kept for browsers that don't understand CSP.
+
+#### Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy: keeping sites apart
+
+These two are newer, and they're the ones most likely to surprise you.
+
+- **`Cross-Origin-Opener-Policy: same-origin`** puts your page in its own group of windows. If your page opens a popup on another site, or another site opens yours, the two can't reach each other through `window.opener`. That blocks tricks where a page you opened quietly redirects your tab, and it helps the browser keep sites in separate processes, away from <Term id="spectre">Spectre</Term>-style attacks.
+- **`Cross-Origin-Resource-Policy: same-origin`** says only pages on your exact origin may load your files: images, scripts, JSON. Other sites can't hotlink them or pull them into their own pages.
+
+Both are good defaults for a website, and both can break real features, as you'll see in the lab below.
+
+#### Referrer-Policy: what other sites learn
+
+When a user follows a link from your page to another site, the browser sends a <Term id="referer">Referer</Term> header saying where they came from. Today's browsers already trim it to just your origin (`https://app.example.com/`), not the full address. Helmet's `no-referrer` removes it completely. That's good for privacy, but analytics on *other* sites lose that information.
+
+#### The quiet ones
+
+- **`Origin-Agent-Cluster: ?1`** is a hint asking the browser to keep your origin isolated in its own group, even from other subdomains of your site.
+- **`X-DNS-Prefetch-Control: off`** stops the browser looking up the domains of links in advance: slightly slower, but it leaks less about what's on the page.
+- **`X-Download-Options: noopen`** only matters to Internet Explorer 8.
+- **`X-Permitted-Cross-Domain-Policies: none`** is for Adobe Flash and Acrobat.
+- **`X-XSS-Protection: 0`** *turns off* the old XSS filters some browsers had. They were buggy, could be abused to cause the very attacks they were meant to stop, and modern browsers have removed them. Helmet sets `0` on purpose.
+- **`X-Powered-By` is removed.** Express announces itself with `X-Powered-By: Express`, and Helmet deletes that. It's a small win, because attackers have plenty of other ways to guess your framework.
+
+So of Helmet's thirteen changes, about half do real work in today's browsers. The rest are cheap insurance for old software.
+
+## Try it yourself: the Helmet lab
+
+Every result in this lab was measured in Chrome with the same Helmet version. Start from `helmet()` and switch headers off one at a time, or start from **No Helmet** and switch them on. Watch which attacks get through, and which of *your own* features break.
+
+<HelmetLab />
+
+Things to try:
+
+- From **helmet()**, switch off only `Content-Security-Policy`. The hidden-frame attack is still blocked, by `X-Frame-Options`. That's why both exist.
+- Notice that **helmet()** breaks two of your own features. Pick **helmet(), tuned** and see how two small settings fix both, without letting a single attack through.
+- Switch off `X-Content-Type-Options` and watch the text file run as code.
+
+## Setting it up properly
+
+`app.use(helmet())` is a good start, but almost every real app needs a few small changes. Here's a setup that keeps the protection and avoids the common breakages. Next to it is the same thing without Helmet, so you can see there's no magic:
+
+<CodeTabs labels={["Express + helmet", "Without Helmet"]}>
+
+```js title="server.js"
+import express from 'express';
+import helmet from 'helmet';
+
+const app = express();
+const isProduction = process.env.NODE_ENV === 'production';
+
+app.use(
+  helmet({
+    // Let your own subdomains (like app.example.com) load images and files from here.
+    crossOriginResourcePolicy: { policy: 'same-site' },
+    // Keep payment and "Sign in with…" popups able to report back via window.opener.
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    contentSecurityPolicy: {
+      directives: {
+        // Your own scripts, plus the one analytics domain you actually use.
+        'script-src': ["'self'", 'https://analytics.example.com'],
+        // Plain http in development: don't upgrade localhost to https.
+        'upgrade-insecure-requests': isProduction ? [] : null,
+      },
+    },
+    // HSTS only makes sense over real HTTPS.
+    strictTransportSecurity: isProduction ? { maxAge: 31536000, includeSubDomains: true } : false,
+  }),
+);
+```
+
+```js title="server.js"
+const isProduction = process.env.NODE_ENV === 'production';
+
+const csp = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "font-src 'self' https: data:",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+  "img-src 'self' data:",
+  "object-src 'none'",
+  "script-src 'self' https://analytics.example.com",
+  "script-src-attr 'none'",
+  "style-src 'self' https: 'unsafe-inline'",
+  ...(isProduction ? ['upgrade-insecure-requests'] : []),
+].join(';');
+
+app.disable('x-powered-by');
+
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', csp);
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  if (isProduction) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+```
+
+</CodeTabs>
+
+A few choices there are deliberate:
+
+- **`same-site` instead of `same-origin` for resources.** Your API on `api.example.com` and your app on `app.example.com` are different origins but the same site. This keeps them working together while still blocking everyone else.
+- **`same-origin-allow-popups`.** Your page stays protected, but popups *you* open can still talk back. That's how payment and login popups work.
+- **A real list in `script-src`, not `'unsafe-inline'`.** Adding `'unsafe-inline'` to make an error go away switches off most of what CSP does against XSS. For your own inline scripts, use a nonce.
+- **HSTS and `upgrade-insecure-requests` only in production.** On `http://localhost` they can't help, and they can make your browser insist on HTTPS where you don't have it.
+
+<Callout type="tip" title="Roll out a strict CSP without breaking production">
+Start with `contentSecurityPolicy: { reportOnly: true, directives: … }`. Helmet then sends `Content-Security-Policy-Report-Only`, and the browser *reports* what it would have blocked without blocking anything. Fix the warnings, then switch `reportOnly` off.
+</Callout>
+
+## What breaks when it fails
+
+### Your own inline script or analytics stops running
+
+A third-party snippet pasted into your HTML, an inline `<script>` in a template, an `onclick="…"` attribute: CSP blocks all of them, and you'll see the "Executing inline script violates…" error. The fix is to allow the specific domain, or use a nonce for your own inline code. Don't reach for `'unsafe-inline'`.
+
+### Images from your API disappear on your own frontend
+
+`Cross-Origin-Resource-Policy: same-origin` blocks `api.example.com/avatars/1.png` from showing on `app.example.com`, because those are different origins. Chrome logs `net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin`. Use `{ policy: 'same-site' }`, or `'cross-origin'` for files that are meant to be public.
+
+People often blame this on <Term id="cors">CORS</Term>, but it's a different header doing a different job. CORS decides who may *read* a response through `fetch()`. CORP decides who may *load* your files at all.
+
+### Payment and "Sign in with…" popups can't report back
+
+With `Cross-Origin-Opener-Policy: same-origin`, a popup on another site loses its link to your page: `window.opener` is `null` inside it. Login and payment flows that send their result back through `window.opener` stop working, often silently. Use `same-origin-allow-popups`.
+
+### localhost suddenly wants HTTPS
+
+Helmet's own documentation warns about two things here. Safari applies `upgrade-insecure-requests` to `http://localhost` and starts asking for `https://localhost`. And HSTS can make your browser force HTTPS for `localhost`, which affects every other app you run there. Turn both off in development, as in the setup above.
+
+### An old subdomain stops loading for a year
+
+`includeSubDomains` covers *every* subdomain. If `legacy.example.com` only speaks plain HTTP, browsers that saw your HSTS header will refuse to load it until the year runs out, and you can't recall the header from those browsers. Check every subdomain before you ship it.
+
+### A 60-second debugging routine
+
+<Steps>
+<Step title="Read the console first">
+CSP, framing and file-type errors all say exactly which rule blocked what. Look for "Content Security Policy", "frame-ancestors" or "X-Frame-Options", and "MIME type".
+</Step>
+<Step title="Then the Network tab">
+A file the browser refused shows a blocked status with a reason such as `NotSameOrigin`. That's usually CORP, not CORS.
+</Step>
+<Step title="Check the page's own response headers">
+The policy that applies is the one on the *page's* response, the HTML document, not the one on your API.
+</Step>
+<Step title="Switch one header off at a time">
+Disable a single header in the config, reload, and confirm it's the culprit. Then *configure* it properly instead of leaving it off.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"Helmet makes my app secure."** Helmet sets headers. It doesn't validate input, escape output, check logins, limit request rates or stop SQL injection. In the attack above, the bug and the attacker's script were both still there; only the reader's browser was protected.
+
+**"Helmet protects my API from attackers."** Every protection is a rule the *browser* follows. `curl`, scripts and other servers ignore all of them. For a JSON API, Helmet is harmless insurance, not a defence.
+
+**"`X-XSS-Protection: 0` means Helmet switched XSS protection off."** It switches off the old, *buggy* XSS filter on purpose. Your real XSS protection is CSP plus escaping everything you display.
+
+**"Removing `X-Powered-By` hides my stack."** It hides one obvious clue. Error pages, cookie names and response timings give plenty of others away.
+
+**"Helmet handles CORS for me."** It doesn't touch CORS at all. `Cross-Origin-Resource-Policy` sounds similar but does nearly the opposite job: CORS *grants* other sites permission to read your responses, while CORP *restricts* who may load your files.
+
+**"Add it once and forget it."** CSP in particular needs updating whenever you add a script, a font or an image domain. Use report-only mode whenever you change it.
+
+## Summary
+
+<FiveQuestions
+  problem="Browsers run scripts, allow framing, guess file types and try plain http by default, to stay compatible with old sites. Security headers let your site ask for stricter rules, and Helmet sends a sensible set of them in one line."
+  sees="Usually nothing at all. When a rule is broken, the console shows errors like `Executing inline script violates the following Content Security Policy directive` or `net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin`."
+  underneath="On every response, `helmet()` calls `res.setHeader` twelve times and `res.removeHeader('X-Powered-By')` once. It never inspects or blocks requests. The browser reads the headers and enforces them: CSP, HSTS, nosniff, framing rules, COOP, CORP and a referrer policy."
+  breaks="Inline scripts and third-party snippets (CSP), images served from your API to your own frontend (CORP), payment and login popups (COOP), localhost in development (HSTS, upgrade-insecure-requests), and old http-only subdomains (includeSubDomains)."
+  misconception="That Helmet makes an app secure, or protects an API. It only asks browsers to be strict. Your server still has to escape output, validate input and check permissions, and curl ignores every header."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "What does `app.use(helmet())` do to each response?",
+      options: ["Scans the request for attacks", "Encrypts the response body", "Blocks suspicious IP addresses", "Adds 12 security headers and removes `X-Powered-By`"],
+      answer: 3,
+      why: "Helmet only sets response headers, and removes one. It never inspects or blocks requests.",
+    },
+    {
+      q: "Who actually enforces Helmet's protections?",
+      options: ["The user's browser", "Express", "The Helmet middleware", "Your load balancer"],
+      answer: 0,
+      why: "The headers are instructions. The browser reads and enforces them; `curl` and other servers ignore them.",
+    },
+    {
+      q: "With Helmet's default CSP, an attacker's inline `<script>` ends up in your page. What happens?",
+      options: ["It runs as normal", "Helmet removes it from the HTML", "The browser refuses to run it", "The server returns a 400 error"],
+      answer: 2,
+      why: "`script-src 'self'` forbids inline scripts, so the browser blocks it. The script is still in your HTML, and the bug that let it in is still yours to fix.",
+    },
+    {
+      q: "Why does Helmet set `X-XSS-Protection: 0`?",
+      options: ["To switch off old, buggy browser XSS filters", "It's a bug in Helmet", "To turn on the strongest XSS protection", "Because CSP requires it"],
+      answer: 0,
+      why: "The old filters could be abused, and modern browsers removed them. `0` makes sure older browsers don't use them either.",
+    },
+    {
+      q: "After adding Helmet, images from `api.example.com` stop showing on `app.example.com`. Which header did it?",
+      options: ["`Content-Security-Policy`", "`Referrer-Policy`", "`X-Frame-Options`", "`Cross-Origin-Resource-Policy: same-origin`"],
+      answer: 3,
+      why: "CORP `same-origin` lets only the exact same origin load the files. `same-site` fixes it for your own subdomains.",
+    },
+    {
+      q: "`Strict-Transport-Security: max-age=31536000` means…",
+      options: ["The page is cached for a year", "The browser uses only HTTPS for this site for a year", "Cookies expire after a year", "The TLS certificate is valid for a year"],
+      answer: 1,
+      why: "HSTS makes the browser upgrade every request to HTTPS for `max-age` seconds, which here is one year.",
+    },
+    {
+      q: "Does Helmet protect a JSON API from someone calling it with `curl`?",
+      options: ["Yes, always", "Only the CSP part does", "No, `curl` ignores these headers", "Only over HTTPS"],
+      answer: 2,
+      why: "Every Helmet protection is enforced by browsers. Your API still needs authentication, validation and rate limiting.",
+    },
+    {
+      q: "Which header stops another site from showing your page in a hidden iframe?",
+      options: ["`Referrer-Policy`", "`X-Content-Type-Options`", "`Origin-Agent-Cluster`", "CSP `frame-ancestors`, plus `X-Frame-Options` for older browsers"],
+      answer: 3,
+      why: "`frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN` both say only your own site may frame the page. That's clickjacking protection.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="What does Helmet do, and what doesn't it do?">
+It sets security-related HTTP response headers, twelve by default, and removes `X-Powered-By`. It doesn't inspect requests, validate input, escape output, check authentication or block attackers. The browser enforces the headers; clients that aren't browsers, like `curl`, ignore them.
+</Question>
+<Question q="Explain Content-Security-Policy. How would you allow one inline script safely?">
+A CSP is a list of allowed sources for scripts, styles, images, frames and more, and the browser blocks everything else. Helmet's default `script-src 'self'` blocks all inline scripts. To allow one, use a nonce: generate a random value for each response, put it in the policy as `'nonce-…'` and on the tag as `<script nonce="…">`. Avoid `'unsafe-inline'`, which switches off most of the protection.
+</Question>
+<Question q="What is HSTS, and what is the first-visit problem?">
+`Strict-Transport-Security` tells the browser to use only HTTPS for a site for `max-age` seconds. The browser only learns it from an HTTPS response, so the very first visit can still be intercepted over plain HTTP. The HSTS preload list fixes that by shipping your domain inside the browser itself.
+</Question>
+<Question q="What is clickjacking, and how do you prevent it?">
+Another site loads your page in an invisible iframe and tricks users into clicking buttons on it. Prevent it with the CSP `frame-ancestors` directive, plus `X-Frame-Options` for older browsers, so only your own site, or nobody, can frame your pages.
+</Question>
+<Question q="What does X-Content-Type-Options: nosniff prevent?">
+It stops browsers guessing a file's type from its content. Without it, a file served as `text/plain`, such as a user upload, can be run as JavaScript if a page loads it with `<script src>`. With `nosniff`, the browser trusts the `Content-Type` header and refuses.
+</Question>
+<Question q="What's the difference between CORS and CORP?">
+CORS lets a server *grant* other origins permission to read its responses through `fetch` or XHR. CORP (`Cross-Origin-Resource-Policy`) lets a server *restrict* which origins may load its files at all, even through `<img>` or `<script>` tags. CORS opens doors; CORP closes them.
+</Question>
+<Question q="How would you roll out a strict CSP on an existing app?">
+Start in report-only mode (`Content-Security-Policy-Report-Only`, or `reportOnly: true` in Helmet), so the browser reports violations without blocking anything. Fix each one by allowing a specific domain or adding a nonce, then switch to enforcing. Review the policy whenever you add a new script or third-party service.
+</Question>
+</Interview>
+
+## What's next
+
+Helmet adds headers on the way out. But in most production setups, something else sits between your Node.js app and the internet, and it can add, change or strip headers too: a reverse proxy like Nginx. That's the next article in this series: **What does a reverse proxy actually do?**
+
+On the [Follow One Request](/chains/request/) path, Helmet belongs to the middleware stop. The next stop is authentication: how the server decides who is making the request.
+
+### Sources and further reading
+
+- Helmet: [documentation](https://helmet.js.org/) and [source on GitHub](https://github.com/helmetjs/helmet)
+- MDN Web Docs: [Content Security Policy (CSP)](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP)
+- MDN Web Docs: [Strict-Transport-Security](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Strict-Transport-Security)
+- MDN Web Docs: [X-Content-Type-Options](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Content-Type-Options)
+- MDN Web Docs: [Cross-Origin-Opener-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Opener-Policy) and [Cross-Origin-Resource-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Resource-Policy)
+- MDN Web Docs: [Referrer-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy)
+- OWASP: [HTTP Headers Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html) and the [Secure Headers Project](https://owasp.org/projects/secure-headers-project)
+- [HSTS preload list](https://hstspreload.org/)

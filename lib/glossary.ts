@@ -123,6 +123,46 @@ export const glossary = {
     term: "Idempotent",
     def: "Safe to repeat: doing it twice has the same effect as doing it once. Reading data is idempotent; placing an order usually isn't.",
   },
+  xss: {
+    term: "XSS",
+    def: "Cross-site scripting: an attacker gets their own JavaScript to run inside your page, for example through a comment your site displays without escaping it.",
+  },
+  clickjacking: {
+    term: "Clickjacking",
+    def: "Another site loads your page in an invisible frame and tricks people into clicking buttons on it, like “Transfer” or “Delete account”.",
+  },
+  csp: {
+    term: "Content-Security-Policy",
+    def: "A header that tells the browser which scripts, styles, images and frames a page may use. Anything not on the list is blocked.",
+  },
+  hsts: {
+    term: "HSTS",
+    def: "HTTP Strict Transport Security: a header that tells the browser to use only HTTPS for your site, for a set number of seconds.",
+  },
+  "mime-type": {
+    term: "MIME type",
+    def: "The label that says what a file is, sent in the Content-Type header: text/html, image/png, application/json and so on.",
+  },
+  iframe: {
+    term: "iframe",
+    def: "An HTML element that shows one web page inside another, like a window in the wall.",
+  },
+  referer: {
+    term: "Referer",
+    def: "A request header that tells a site which page the user came from. (It really is spelled with one r: a typo in the early HTTP specs that stuck.)",
+  },
+  mitm: {
+    term: "Man-in-the-middle",
+    def: "Someone between you and the server, such as a fake Wi-Fi hotspot, who can read or change traffic that isn't encrypted.",
+  },
+  nonce: {
+    term: "Nonce",
+    def: "A random value made fresh for each response. A CSP can say “only run inline scripts that carry this exact nonce”.",
+  },
+  spectre: {
+    term: "Spectre",
+    def: "A family of CPU flaws that can let code on one web page read memory belonging to another page in the same browser process.",
+  },
 } as const;
 
 export type GlossaryId = keyof typeof glossary;

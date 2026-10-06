@@ -550,6 +550,95 @@ If your app's own answer is right but the browser's isn't, something in between 
   misconception="That CORS protects your API or stops CSRF, and that a blocked request never ran. CORS only decides who may read an answer inside a browser. Blocked does not mean it didn't happen."
 />
 
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "Which two addresses have the same origin?",
+      options: ["`http://example.com` and `https://example.com`", "`http://localhost:3000` and `http://localhost:5173`", "`https://app.example.com` and `https://app.example.com/orders?id=7`", "`https://example.com` and `https://www.example.com`"],
+      answer: 2,
+      why: "Only the scheme, host and port count. The path and anything after `?` don't. The other pairs differ in scheme, port and host.",
+    },
+    {
+      q: "Your API works in Postman but fails in Chrome with a CORS error. Why does Postman work?",
+      options: ["Postman isn't a browser, so it never applies CORS rules", "Postman sends a secret header the server trusts", "The server has a special rule for Postman", "Postman switches off HTTPS"],
+      answer: 0,
+      why: "CORS is enforced by browsers, to protect the person using them. Postman, `curl` and other servers never check it.",
+    },
+    {
+      q: "Which of these makes the browser send an `OPTIONS` preflight first?",
+      options: ["A plain `GET`", "A `HEAD` request", "A form-style `POST` with `application/x-www-form-urlencoded`", "A `DELETE` request"],
+      answer: 3,
+      why: "An HTML form could never send a `DELETE`, so the browser asks first. The other three are simple requests and go out straight away.",
+    },
+    {
+      q: "A form-style `POST` to another origin is blocked by CORS. Did your server run it?",
+      options: ["No, the browser stopped it before it left", "Very likely yes: the browser only hid the answer", "Only if the server returned `200`", "Only in Firefox"],
+      answer: 1,
+      why: "A simple request is sent right away. The browser checks CORS on the answer, after the server has already done the work.",
+    },
+    {
+      q: "Your frontend sends cookies with `credentials: 'include'`. Which response lets it read the answer?",
+      options: ["`Access-Control-Allow-Origin: *`", "`Access-Control-Allow-Origin: *` plus `Access-Control-Allow-Credentials: true`", "`Access-Control-Allow-Origin: https://app.example.com` plus `Access-Control-Allow-Credentials: true`", "No CORS headers: the cookies are enough"],
+      answer: 2,
+      why: "With credentials, the browser needs the exact origin and `Allow-Credentials: true`. It refuses `*`, so that random websites can't read your users' logged-in data.",
+    },
+    {
+      q: "What does `Access-Control-Max-Age: 7200` do?",
+      options: ["Lets the browser remember a successful preflight for up to 2 hours", "Caches the API's data for 2 hours", "Keeps the connection open for 2 hours", "Makes cookies last 2 hours"],
+      answer: 0,
+      why: "It only remembers the preflight's answer, per origin and per exact URL. Chrome won't remember it for longer than 7200 seconds anyway.",
+    },
+    {
+      q: "Preflights started failing with `401` right after you added login middleware. What's the likely cause?",
+      options: ["The user's token expired", "The browser stopped sending cookies", "`Max-Age` is set too high", "The login check runs before CORS and rejects the `OPTIONS` request, which never carries a token"],
+      answer: 3,
+      why: "Preflights carry no cookies and no `Authorization` header, on purpose. Handle CORS and answer preflights before authentication.",
+    },
+    {
+      q: "Who does CORS actually protect?",
+      options: ["Your API, from `curl` and other servers", "People using a browser, from pages that would read other sites' answers with their cookies", "Your database, from SQL injection", "Your users, from CSRF attacks"],
+      answer: 1,
+      why: "CORS only controls what JavaScript in a browser may read. Your API still needs real login checks, and CSRF needs its own defences.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="What is the same-origin policy, and how does CORS relate to it?">
+The same-origin policy is a browser rule: a page may *send* requests to other origins, but it can't *read* their answers. An origin is the scheme, host and port together. CORS is how a server relaxes that rule on purpose: by sending `Access-Control-Allow-Origin` and related headers, it tells the browser which other origins may read its responses.
+</Question>
+<Question q="Why does a request work in Postman or curl but fail in the browser?">
+CORS is enforced by the browser, to protect the person using it from pages that would read data with their cookies. Postman and `curl` don't run code from random websites, so they don't enforce it. The server usually received the same request and answered the same way; the browser just held the answer back because the permission header was missing.
+</Question>
+<Question q="What is a preflight request, and when does the browser send one?">
+It's an automatic `OPTIONS` request carrying `Origin`, `Access-Control-Request-Method` and `Access-Control-Request-Headers`. The browser sends it before any request a plain HTML form couldn't make: a method other than `GET`, `HEAD` or `POST`, a body type like `application/json`, or an extra header like `Authorization`. The real request only goes out if the answer allows it, and `Access-Control-Max-Age` lets the browser remember that answer for a while.
+</Question>
+<Question q="Why can't you use `Access-Control-Allow-Origin: *` with cookies, and what do you do instead?">
+Because it would let any website read your users' logged-in data, so the browser refuses `*` whenever credentials are included. Instead, compare the request's `Origin` against a fixed allowlist, send back the matching origin with `Access-Control-Allow-Credentials: true`, and add `Vary: Origin`. Never copy back any origin blindly, and never allow `null`.
+</Question>
+<Question q="Does CORS protect your API?">
+No. It protects people using browsers from cross-origin *reads*. `curl`, scripts and other servers ignore it completely, and outside a browser anyone can send any `Origin` header they like. Your API still needs authentication, permission checks and rate limiting on every route.
+</Question>
+<Question q="How is CORS different from CSRF protection?">
+CORS decides who may *read* a response. CSRF is about forged requests being *sent* with the user's cookies. A form post from another site is a simple request: it reaches your server and runs, whatever your CORS settings say. Stopping CSRF needs other tools, such as `SameSite` cookies, CSRF tokens, or checking `Origin` on the server for requests that change data.
+</Question>
+<Question q="A CORS-blocked POST: did it run, and why does that matter?">
+If it was a simple request, or the preflight passed, then yes: the server processed it, and only the answer was withheld. So a user, or retry code, that tries again can create the same order twice. Treat a CORS failure on a write like a timeout, and make writes safe to repeat with idempotency keys.
+</Question>
+<Question q="Users see a CORS error in production, but your CORS config looks right. How do you debug it?">
+Start from the Network tab, not the console:
+
+1. Is there a preflight, and what status did it get? A `401`, `405` or redirect points at auth, a gateway or the URL.
+2. What status did the real request get? A `500` or `502` without CORS headers looks exactly like a CORS error.
+3. Does `Access-Control-Allow-Origin` match the `Origin` exactly, and is there only one of it?
+4. Repeat the request with `curl -i` and an `Origin` header, then check each layer in between: a CDN caching without `Vary: Origin`, a proxy removing headers or answering `OPTIONS` itself.
+</Question>
+</Interview>
+
 ## What's next
 
 One question is still open. If CORS doesn't stop a form on another website from *sending* a request, what does? And what makes a forged request different from a normal cross-origin one? That's the next article in this series: **What is CSRF, and how is it different from CORS?**

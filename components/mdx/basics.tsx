@@ -175,7 +175,7 @@ export function FiveQuestions(props: FiveProps) {
       </div>
       <dl className="divide-y divide-line">
         {fiveQuestions.map(({ key, q, icon: Icon }, i) => (
-          <div key={key} className="grid gap-2 px-5 py-4 sm:grid-cols-[15rem_1fr] sm:gap-6">
+          <div key={key} className="grid grid-cols-1 gap-2 px-5 py-4 sm:grid-cols-[15rem_minmax(0,1fr)] sm:gap-6">
             <dt className="flex items-start gap-2.5 text-[14.5px] font-semibold">
               <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-accent-tint">
                 <Icon className="size-3.5 text-accent" />

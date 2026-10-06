@@ -319,7 +319,11 @@ body::before {
   -webkit-box-decoration-break: clone;
 }
 
-.prose-ledger :where(td:first-child > code:not([class])) { white-space: nowrap; overflow-wrap: normal; }
+/* Code in a table's first column breaks only at spaces and hyphens; it stays on one line once there's room. */
+.prose-ledger :where(td:first-child > code:not([class])) { overflow-wrap: normal; }
+@media (min-width: 40rem) {
+  .prose-ledger :where(td:first-child > code:not([class])) { white-space: nowrap; }
+}
 
 .prose-ledger :where(:not(pre) > code:not([class]))::before,
 .prose-ledger :where(:not(pre) > code:not([class]))::after { content: none; }

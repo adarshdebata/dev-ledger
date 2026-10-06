@@ -14,13 +14,8 @@ function Placeholder({ label }: { label: string }) {
   );
 }
 
-const Playground = dynamic(() => import("./cors-playground"), {
-  ssr: false,
-  loading: () => <Placeholder label="CORS playground" />,
-});
-
-/** Downloads and mounts the playground only when it's about to scroll into view. */
-export function CorsPlayground() {
+/** Renders `children` only once the spot is about to scroll into view, so heavy widgets load late. */
+function WhenNear({ label, children }: { label: string; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [show, setShow] = useState(false);
 
@@ -42,7 +37,33 @@ export function CorsPlayground() {
 
   return (
     <div ref={ref} data-pagefind-ignore>
-      {show ? <Playground /> : <Placeholder label="CORS playground" />}
+      {show ? children : <Placeholder label={label} />}
     </div>
+  );
+}
+
+const Playground = dynamic(() => import("./cors-playground"), {
+  ssr: false,
+  loading: () => <Placeholder label="CORS playground" />,
+});
+
+const Lab = dynamic(() => import("./helmet-lab"), {
+  ssr: false,
+  loading: () => <Placeholder label="Helmet lab" />,
+});
+
+export function CorsPlayground() {
+  return (
+    <WhenNear label="CORS playground">
+      <Playground />
+    </WhenNear>
+  );
+}
+
+export function HelmetLab() {
+  return (
+    <WhenNear label="Helmet lab">
+      <Lab />
+    </WhenNear>
   );
 }

@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, useInView, useReducedMotion } from "motion/react";
-import { Code2, Database, Globe, Network, Pause, Play, RotateCcw, Server, Shield, SkipBack, SkipForward } from "lucide-react";
+import { Code2, Database, Globe, Network, Pause, Play, RotateCcw, Server, Shield, SkipBack, SkipForward, User, UserX } from "lucide-react";
 import { HttpLines } from "./http-lines";
 import { inline } from "./inline";
 
-type ActorIcon = "js" | "browser" | "server" | "db" | "proxy" | "shield";
+type ActorIcon = "js" | "browser" | "server" | "db" | "proxy" | "shield" | "user" | "attacker";
 type Tone = "default" | "ok" | "bad" | "warn" | "muted";
 
 export type SeqActor = { id: string; label: string; sub?: string; icon?: ActorIcon };
@@ -19,7 +19,7 @@ export type SeqStep = {
   tone?: Tone;
 };
 
-const icons = { js: Code2, browser: Globe, server: Server, db: Database, proxy: Network, shield: Shield };
+const icons = { js: Code2, browser: Globe, server: Server, db: Database, proxy: Network, shield: Shield, user: User, attacker: UserX };
 
 const toneColor: Record<Tone, string> = {
   default: "var(--accent-soft)",
