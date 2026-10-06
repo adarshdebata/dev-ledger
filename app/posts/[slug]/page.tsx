@@ -3,12 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight, ChevronDown, Pencil } from "lucide-react";
 import { mdxComponents } from "@/components/mdx";
-import { roadmapLabel } from "@/components/post-card";
 import { RevealOnScroll } from "@/components/reveal-on-scroll";
 import { ReadingProgress, Toc } from "@/components/toc";
 import { renderMdx } from "@/lib/mdx";
 import { formatDate, getAllPosts, getPost, postForRoadmapItem } from "@/lib/posts";
-import { absoluteUrl, alternates, getChain, getSeries, roadmap, site } from "@/lib/site";
+import { absoluteUrl, alternates, getChain, getSeries, roadmap, site, weekPlace } from "@/lib/site";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -53,7 +52,10 @@ export default async function PostPage({ params }: Props) {
   const stage = chain && stageIndex >= 0 ? chain.stages[stageIndex] : undefined;
   const nextStage = chain && stageIndex >= 0 ? chain.stages[stageIndex + 1] : undefined;
   const nextStagePost = nextStage?.roadmap.map(postForRoadmapItem).find(Boolean);
-  const nextItem = roadmap.find((r) => r.n === Math.max(...post.roadmap) + 1 && r.series === post.series);
+  const at = weekPlace(post.slug);
+  const nextDayPost = at?.next?.slug ? getPost(at.next.slug) : undefined;
+  // Posts outside the weekly plan point at the next topic in their series instead.
+  const nextItem = at ? undefined : roadmap.find((r) => r.n === Math.max(...post.roadmap) + 1 && r.series === post.series);
   const nextItemPost = nextItem ? postForRoadmapItem(nextItem.n) : undefined;
 
   const jsonLd = {
@@ -107,8 +109,14 @@ export default async function PostPage({ params }: Props) {
                   <time dateTime={post.date}>{formatDate(post.date)}</time>
                   <span aria-hidden="true">·</span>
                   <span>{post.readingMinutes} min read</span>
-                  <span aria-hidden="true">·</span>
-                  <span>Roadmap {roadmapLabel(post.roadmap)}</span>
+                  {at && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <Link href="/#this-week" className="hover:text-fg hover:underline">
+                        Week {at.week.n} · Day {at.day.day}
+                      </Link>
+                    </>
+                  )}
                   {chain && stage && (
                     <>
                       <span aria-hidden="true">·</span>
@@ -158,6 +166,14 @@ export default async function PostPage({ params }: Props) {
                 )}
 
                 <div className="grid gap-4 sm:grid-cols-2">
+                  {at?.next && (
+                    <NextCard
+                      eyebrow={`Next in Week ${at.week.n} · Day ${at.next.day}`}
+                      title={at.next.title}
+                      href={nextDayPost ? `/posts/${nextDayPost.slug}/` : "/#this-week"}
+                      soon={!nextDayPost}
+                    />
+                  )}
                   {nextItem && (
                     <NextCard
                       eyebrow={`Next in Series ${series.n}`}

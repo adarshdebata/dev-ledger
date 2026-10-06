@@ -423,9 +423,9 @@ Start in report-only mode (`Content-Security-Policy-Report-Only`, or `reportOnly
 
 ## What's next
 
-Helmet adds headers on the way out. But in most production setups, something else sits between your Node.js app and the internet, and it can add, change or strip headers too: a reverse proxy like Nginx. That's the next article in this series: **What does a reverse proxy actually do?**
+Every header in this article reached the browser over a connection to a port on your server. But which network address is that port actually listening on? That one detail is why an app that works perfectly on your laptop can be unreachable inside Docker. It's Day 7, the last post this week: **127.0.0.1 vs 0.0.0.0: Why It Works Locally but Not in Docker**.
 
-On the [Follow One Request](/chains/request/) path, Helmet belongs to the middleware stop. The next stop is authentication: how the server decides who is making the request.
+Reverse proxies like Nginx, which can add, change or strip headers like these on the way out, get their own article next week.
 
 ### Sources and further reading
 

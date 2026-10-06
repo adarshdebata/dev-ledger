@@ -110,8 +110,6 @@
   --shadow-card: var(--shadow);
   --shadow-lift: var(--shadow-lg);
 
-  --animate-flow: flow 6.5s linear infinite;
-  --animate-flow-bg: flow-bg 6.5s linear infinite;
   --animate-fade-up: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-grow-x: grow-x 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -124,18 +122,6 @@
 @keyframes grow-x {
   from { transform: scaleX(0); }
   to { transform: scaleX(1); }
-}
-
-@keyframes flow {
-  0%, 100% { opacity: 0.45; }
-  3% { opacity: 1; }
-  14% { opacity: 0.45; }
-}
-
-@keyframes flow-bg {
-  0%, 100% { opacity: 0; }
-  3% { opacity: 1; }
-  14% { opacity: 0; }
 }
 
 /* ---------- Base ---------- */

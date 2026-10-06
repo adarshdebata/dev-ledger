@@ -2,9 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { ImageResponse } from "next/og";
 import { hawk } from "@/components/logo";
-import { roadmapLabel } from "@/components/post-card";
 import { getAllPosts, getPost } from "@/lib/posts";
-import { getChain, getSeries } from "@/lib/site";
+import { getChain, getSeries, placeLabel } from "@/lib/site";
 
 export const dynamic = "force-static";
 export const dynamicParams = false;
@@ -67,7 +66,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 22, color: MUTED }}>
-          <div style={{ display: "flex", color: TERRACOTTA, fontWeight: 700 }}>{roadmapLabel(post.roadmap)}</div>
+          <div style={{ display: "flex", color: TERRACOTTA, fontWeight: 700 }}>{placeLabel(post)}</div>
           {chain && stage && <div style={{ display: "flex", color: TEAL }}>{`${chain.title} · ${stage.name}`}</div>}
           <div style={{ marginLeft: "auto", display: "flex" }}>adarshdebata.github.io/dev-ledger</div>
         </div>

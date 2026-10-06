@@ -117,7 +117,7 @@ export function Search() {
       <button
         type="button"
         onClick={open}
-        className="group flex h-9 items-center gap-2 rounded-lg border border-line bg-bg/50 px-2.5 text-sm text-subtle transition-colors hover:border-line-strong hover:text-muted sm:w-48"
+        className="group flex h-9 items-center gap-2 rounded-lg border border-line bg-bg/50 px-2.5 text-sm text-subtle transition-colors hover:border-line-strong hover:text-muted sm:w-48 lg:w-40 xl:w-48"
         aria-label="Search articles"
       >
         <SearchIcon className="size-4" />

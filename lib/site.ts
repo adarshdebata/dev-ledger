@@ -40,6 +40,44 @@ export const series: SeriesInfo[] = [
 
 export const getSeries = (n: number) => series.find((s) => s.n === n);
 
+export type WeekDay = { day: number; title: string; slug?: string };
+export type Week = { n: number; title: string; blurb: string; days: WeekDay[] };
+
+/** The publishing plan: one week, one theme, one post a day. A day with a slug links to that post once it exists. */
+export const weeks: Week[] = [
+  {
+    n: 1,
+    title: "The Request You Never See",
+    blurb: "Seven posts, one request: every stop between pressing Enter and seeing the answer.",
+    days: [
+      { day: 1, title: "One Request, Seven Stops: What Happens After You Press Enter", slug: "one-request-seven-stops" },
+      { day: 2, title: "DNS: How a Name Becomes an Address (and When It Lies)" },
+      { day: 3, title: "TCP & TLS: The Handshakes Before Your First Byte" },
+      { day: 4, title: "HTTP Headers: The Conversation Inside Every Request" },
+      { day: 5, title: "Your Browser Just Blocked Your Request. Why?", slug: "your-browser-blocked-your-request" },
+      { day: 6, title: "You Installed Helmet. What Did It Actually Change?", slug: "you-installed-helmet" },
+      { day: 7, title: "127.0.0.1 vs 0.0.0.0: Why It Works Locally but Not in Docker" },
+    ],
+  },
+];
+
+export const currentWeek = weeks[0];
+
+/** Where a post sits in the weekly plan, if it's part of one. */
+export function weekPlace(slug: string) {
+  for (const week of weeks) {
+    const day = week.days.find((d) => d.slug === slug);
+    if (day) return { week, day, next: week.days.find((d) => d.day === day.day + 1) };
+  }
+  return undefined;
+}
+
+/** "Week 1 · Day 5" for a post in the plan, otherwise "Series 2". */
+export function placeLabel(post: { slug: string; series: number }) {
+  const at = weekPlace(post.slug);
+  return at ? `Week ${at.week.n} · Day ${at.day.day}` : `Series ${post.series}`;
+}
+
 export type ChainId = "request" | "payment";
 export type ChainStage = { name: string; roadmap: number[]; note: string };
 export type Chain = { id: ChainId; title: string; blurb: string; stages: ChainStage[] };

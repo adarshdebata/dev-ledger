@@ -641,9 +641,9 @@ Start from the Network tab, not the console:
 
 ## What's next
 
-One question is still open. If CORS doesn't stop a form on another website from *sending* a request, what does? And what makes a forged request different from a normal cross-origin one? That's the next article in this series: **What is CSRF, and how is it different from CORS?**
+CORS is just one set of headers the browser obeys. Your server can send many more, and one popular Express package adds a dozen of them in a single line. The next post this week, Day 6, looks at what each one actually does: [You Installed Helmet. What Did It Actually Change?](/posts/you-installed-helmet/)
 
-On the [Follow One Request](/chains/request/) path, the next stop leaves the browser. Before any of this can happen, `api.example.com` has to be turned into an IP address. That's DNS.
+One question is still open, too. If CORS doesn't stop a form on another website from *sending* a request, what does? That gets its own article later: **What is CSRF, and how is it different from CORS?**
 
 ### Sources and further reading
 

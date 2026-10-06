@@ -3,54 +3,6 @@ import { ChevronRight } from "lucide-react";
 import { postForRoadmapItem } from "@/lib/posts";
 import type { Chain } from "@/lib/site";
 
-const stageHasPost = (roadmap: number[]) => roadmap.some((n) => postForRoadmapItem(n));
-
-/**
- * The chain as a row of stages with a highlight that travels along it,
- * like a packet moving hop by hop. Pure CSS, so it costs nothing to run
- * and stops for readers who prefer reduced motion.
- */
-export function ChainStrip({ chain, animated = true }: { chain: Chain; animated?: boolean }) {
-  const step = 0.5;
-  const duration = chain.stages.length * step;
-  return (
-    <ol className="flex flex-wrap items-center gap-x-1 gap-y-2" aria-label={`${chain.title} stages`}>
-      {chain.stages.map((s, i) => {
-        const live = stageHasPost(s.roadmap);
-        const style = animated
-          ? { animationDelay: `${i * step - duration}s`, animationDuration: `${duration}s` }
-          : undefined;
-        return (
-          <li key={s.name} className="flex items-center gap-1">
-            <span
-              className={`relative isolate inline-flex items-center gap-1.5 overflow-hidden rounded-full border px-3 py-1 text-[13px] font-medium ${
-                live ? "border-accent-soft/60 text-fg" : "border-line text-muted"
-              }`}
-            >
-              {animated && (
-                <span
-                  aria-hidden="true"
-                  className="animate-flow-bg absolute inset-0 -z-10 bg-teal-tint opacity-0 motion-reduce:hidden"
-                  style={style}
-                />
-              )}
-              {live && <span className="size-1.5 rounded-full bg-accent-soft" aria-label="published" />}
-              {s.name}
-            </span>
-            {i < chain.stages.length - 1 && (
-              <ChevronRight
-                aria-hidden="true"
-                className={`size-3.5 text-subtle ${animated ? "animate-flow motion-reduce:animate-none" : ""}`}
-                style={style}
-              />
-            )}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
 /** Vertical timeline of a chain, with every stage's articles (published or upcoming). */
 export function ChainTimeline({ chain, titles }: { chain: Chain; titles: Map<number, string> }) {
   return (
@@ -89,10 +41,10 @@ export function ChainTimeline({ chain, titles }: { chain: Chain; titles: Map<num
                 </Link>
               ))}
               {upcoming.length > 0 && (
-                <ul className="mt-3 space-y-1.5">
+                <ul className="mt-3 space-y-1.5" aria-label="Coming later">
                   {upcoming.map((u) => (
                     <li key={u.n} className="flex gap-2.5 text-sm text-subtle">
-                      <span className="font-mono text-xs leading-5">#{u.n}</span>
+                      <span aria-hidden="true" className="mt-[7px] size-1.5 shrink-0 rounded-full border border-line-strong" />
                       <span>{u.title}</span>
                     </li>
                   ))}

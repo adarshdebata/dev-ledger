@@ -62,14 +62,14 @@ export default async function SeriesPage({ params }: Props) {
               <span className="font-mono text-xs text-subtle">{covered}/20</span>
             </div>
             <ol className="mt-4 space-y-2.5 text-[13.5px] lg:max-h-[65vh] lg:overflow-y-auto lg:pr-1">
-              {topics.map((t) => (
+              {topics.map((t, i) => (
                 <li key={t.n} className="flex gap-2.5">
                   {t.post ? (
                     <span className="bg-brand mt-0.5 grid size-4 shrink-0 place-items-center rounded-full">
                       <Check className="size-2.5 text-white" strokeWidth={3.5} />
                     </span>
                   ) : (
-                    <span className="mt-[3px] w-4 shrink-0 text-right font-mono text-[11px] text-subtle">{t.n}</span>
+                    <span className="mt-[3px] w-4 shrink-0 text-right font-mono text-[11px] text-subtle">{i + 1}</span>
                   )}
                   {t.post ? (
                     <Link href={`/posts/${t.post.slug}/`} className="font-medium text-fg hover:text-accent">

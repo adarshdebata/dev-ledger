@@ -1,16 +1,7 @@
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { formatDate, type PostMeta } from "@/lib/posts";
-import { getChain, getSeries, withBase } from "@/lib/site";
-
-/** "#9–11", "#38" or "#4, #7" for a post's roadmap items. */
-export function roadmapLabel(items: number[]) {
-  const s = [...items].sort((a, b) => a - b);
-  if (s.length === 0) return "";
-  const contiguous = s.every((n, i) => i === 0 || n === s[i - 1] + 1);
-  if (contiguous && s.length > 1) return `#${s[0]}–${s[s.length - 1]}`;
-  return s.map((n) => `#${n}`).join(", ");
-}
+import { getChain, getSeries, weekPlace, withBase } from "@/lib/site";
 
 /** The chain stage a post belongs to, if any. */
 export function postStage(post: PostMeta) {
@@ -19,13 +10,20 @@ export function postStage(post: PostMeta) {
   return chain && stage ? { chain, stage } : undefined;
 }
 
-/** A small mono "issue tag": series and roadmap numbers, like a publication's index line. */
+/** A small mono index line: "Week 1 / Day 5" for posts in the weekly plan, "Series 2" otherwise. */
 export function IssueTag({ post }: { post: PostMeta }) {
+  const at = weekPlace(post.slug);
   return (
     <span className="inline-flex items-center gap-2 font-mono text-[11.5px] font-medium tracking-wide text-subtle">
-      <span className="text-accent">S{post.series}</span>
-      <span aria-hidden="true">/</span>
-      <span>{roadmapLabel(post.roadmap)}</span>
+      {at ? (
+        <>
+          <span className="text-accent">Week {at.week.n}</span>
+          <span aria-hidden="true">/</span>
+          <span>Day {at.day.day}</span>
+        </>
+      ) : (
+        <span className="text-accent">Series {post.series}</span>
+      )}
     </span>
   );
 }

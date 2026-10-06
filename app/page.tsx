@@ -1,11 +1,10 @@
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight } from "lucide-react";
-import { ChainStrip } from "@/components/chain-path";
+import { ArrowRight, ArrowUpRight, Check } from "lucide-react";
 import { HeroWaterfall } from "@/components/hero-waterfall";
 import { IssueTag, PostCard, PostCover, PostMetaLine, postStage } from "@/components/post-card";
 import { WindField } from "@/components/wind-field";
-import { getAllPosts, postsInSeries, seriesRoadmap } from "@/lib/posts";
-import { chains, external, series, site } from "@/lib/site";
+import { getAllPosts, getPost, postsInSeries, seriesRoadmap } from "@/lib/posts";
+import { chains, currentWeek, external, series, site } from "@/lib/site";
 
 const fiveQuestions = [
   "What problem does it solve?",
@@ -19,7 +18,8 @@ export default function Home() {
   const posts = getAllPosts();
   const [featured, ...rest] = posts;
   const where = featured ? postStage(featured) : undefined;
-  const requestChain = chains[0];
+  const weekDays = currentWeek.days.map((d) => ({ ...d, post: d.slug ? getPost(d.slug) : undefined }));
+  const published = weekDays.filter((d) => d.post).length;
 
   return (
     <>
@@ -78,7 +78,7 @@ export default function Home() {
               <dl className="space-y-4 border-line text-sm lg:border-l lg:pl-8">
                 <PostCover post={featured} />
                 <div>
-                  <dt className="eyebrow text-subtle">Issue</dt>
+                  <dt className="eyebrow text-subtle">Part of</dt>
                   <dd className="mt-1.5"><IssueTag post={featured} /></dd>
                 </div>
                 <div>
@@ -112,23 +112,39 @@ export default function Home() {
         </div>
       </section>
 
-      {/* One request, hop by hop */}
-      <section className="container-page mt-24">
+      {/* The current week: one theme, one post a day */}
+      <section id="this-week" className="container-page mt-24 scroll-mt-28">
         <div className="grid gap-10 border-t border-line pt-10 lg:grid-cols-[minmax(0,1fr)_25rem] lg:gap-14">
           <div>
-            <SectionLabel>{requestChain.title}</SectionLabel>
+            <SectionLabel>This week</SectionLabel>
             <h2 className="mt-4 max-w-xl text-3xl leading-tight font-semibold tracking-[-0.03em]">
-              Every click takes the same path. Each stop gets its own article.
+              Week {currentWeek.n}: {currentWeek.title}
             </h2>
             <p className="mt-4 max-w-xl text-[16px] leading-relaxed text-muted">
-              From the browser to the database and back. Start at any stop; the ones already written are marked.
+              {currentWeek.blurb} Start at Day 1 for the full picture, or jump to any day.
             </p>
-            <div className="mt-7">
-              <ChainStrip chain={requestChain} />
-            </div>
-            <Link href="/chains/request/" className="mt-7 inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline">
-              See the whole path <ArrowRight className="size-4" />
-            </Link>
+            <ol className="mt-7 max-w-xl border-t border-line">
+              {weekDays.map((d) => (
+                <li key={d.day} className="border-b border-line">
+                  {d.post ? (
+                    <Link href={`/posts/${d.post.slug}/`} className="group grid grid-cols-[4.5rem_1fr_auto] items-baseline gap-3 py-3.5">
+                      <span className="font-mono text-[12px] text-accent">Day {d.day}</span>
+                      <span className="text-[15.5px] leading-snug font-medium transition-colors group-hover:text-accent">{d.title}</span>
+                      <Check className="size-4 self-center text-ok" aria-label="Published" />
+                    </Link>
+                  ) : (
+                    <div className="grid grid-cols-[4.5rem_1fr_auto] items-baseline gap-3 py-3.5">
+                      <span className="font-mono text-[12px] text-subtle">Day {d.day}</span>
+                      <span className="text-[15.5px] leading-snug text-muted">{d.title}</span>
+                      <span className="font-mono text-[11px] text-subtle">soon</span>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ol>
+            <p className="mt-4 font-mono text-[12px] text-subtle">
+              {published} of {weekDays.length} published
+            </p>
           </div>
           <HeroWaterfall />
         </div>

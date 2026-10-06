@@ -12,6 +12,7 @@ import { ThemeToggle } from "./theme-toggle";
 const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 const nav = [
+  { href: "/", label: "Home" },
   { href: "/#series", label: "Series" },
   { href: "/chains/request/", label: "Follow a request" },
   { href: "/tags/", label: "Tags" },
@@ -41,21 +42,24 @@ export function SiteHeader() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const isActive = (href: string) => !href.startsWith("/#") && pathname.startsWith(href.replace(/\/$/, ""));
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : !href.startsWith("/#") && pathname.startsWith(href.replace(/\/$/, ""));
 
   return (
     <header data-pagefind-ignore className="sticky top-0 z-40 px-3 pt-3 sm:px-4">
       <div className={`glass mx-auto max-w-[73.5rem] rounded-2xl transition-shadow duration-300 ${scrolled ? "shadow-lift" : ""}`}>
-        <div className="flex h-14 items-center gap-3 px-3 sm:px-4">
-          <Link href="/" className="rounded-lg" aria-label="Dev Ledger home">
+        {/* Logo left, links centred, tools right: the outer columns share the leftover space equally. */}
+        <div className="flex h-14 items-center gap-3 px-3 sm:px-4 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+          <Link href="/" className="justify-self-start rounded-lg" aria-label="Dev Ledger home">
             <Wordmark />
           </Link>
 
-          <nav className="ml-6 hidden items-center gap-0.5 lg:flex" aria-label="Main">
+          <nav className="hidden items-center gap-0.5 lg:flex" aria-label="Main">
             {nav.map((n) => (
               <Link
                 key={n.href}
                 href={n.href}
+                aria-current={isActive(n.href) ? "page" : undefined}
                 className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors hover:text-fg ${
                   isActive(n.href) ? "text-fg" : "text-muted"
                 }`}
@@ -65,7 +69,7 @@ export function SiteHeader() {
             ))}
           </nav>
 
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-1 lg:ml-0 lg:justify-self-end">
             <Search />
             <a href="https://github.com/adarshdebata/dev-ledger" className={`${iconBtn} hidden sm:grid`} aria-label="Source on GitHub">
               <GitHubIcon className="size-[17px]" />
