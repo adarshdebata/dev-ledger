@@ -210,6 +210,22 @@ body::before {
   @media (width >= 40rem) { padding-inline: 1.5rem; }
 }
 
+/*
+ * Wide figures: up to ~1120 px on laptops, centred on the reading column. From xl the column
+ * sits left of the table of contents, so the figure centres on both (and the TOC steps aside).
+ */
+@utility breakout {
+  --breakout: min(70rem, calc(100vw - 3rem));
+  width: var(--breakout);
+  max-width: none;
+  margin-left: calc(50% - var(--breakout) / 2);
+  @media (width >= 80rem) { margin-left: calc((64rem - var(--breakout)) / 2); }
+}
+
+/* The table of contents fades out while a wide figure passes underneath it. */
+[data-toc-panel] { transition: opacity 0.3s, transform 0.3s; }
+html[data-wide-in-view] [data-toc-panel] { opacity: 0; transform: translateX(12px); pointer-events: none; }
+
 /* ---------- Scroll reveals (only once JS has set html.reveal-ready) ---------- */
 
 @media (prefers-reduced-motion: no-preference) {

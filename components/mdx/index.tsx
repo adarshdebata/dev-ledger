@@ -3,11 +3,13 @@ import { withBase } from "@/lib/site";
 import { Callout, CodeBlock, Compare, DevTools, FiveQuestions, H2, H3, SmartLink, Step, Steps, Table } from "./basics";
 import { CodeTabs, Predict } from "./client-bits";
 import { Interview, Question } from "./interview";
+import { RequestJourney } from "./journey";
 import { CorsPlayground, HelmetLab } from "./lazy";
 import { Quiz } from "./quiz";
 import { OriginCompare } from "./origin-compare";
 import { SequenceDiagram } from "./sequence-diagram";
 import { Term } from "./term";
+import { TimingTab } from "./timing";
 import { UrlAnatomy } from "./url-anatomy";
 
 /** Component map for a post. Relative image paths resolve to that post's folder. */
@@ -42,6 +44,8 @@ export function mdxComponents(slug: string): MDXComponents {
     Term,
     CorsPlayground,
     HelmetLab,
+    RequestJourney,
+    TimingTab,
     Quiz,
     Interview,
     Question,

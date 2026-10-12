@@ -39,9 +39,39 @@ function useActiveHeading(ids: string[]) {
   return active;
 }
 
+/**
+ * Marks <html data-wide-in-view> while a figure that's wider than the reading column is on screen,
+ * so the table of contents beside the column can step aside (see [data-toc-panel] in globals.css).
+ */
+function useStepAsideForWideFigures() {
+  useEffect(() => {
+    const figures = document.querySelectorAll<HTMLElement>("[data-wide]");
+    if (figures.length === 0) return;
+    const visible = new Set<Element>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const el = e.target as HTMLElement;
+          const wide = el.offsetWidth > (el.parentElement?.offsetWidth ?? Infinity) + 1;
+          if (e.isIntersecting && wide) visible.add(el);
+          else visible.delete(el);
+        }
+        document.documentElement.toggleAttribute("data-wide-in-view", visible.size > 0);
+      },
+      { rootMargin: "-120px 0px 0px 0px" },
+    );
+    figures.forEach((f) => io.observe(f));
+    return () => {
+      io.disconnect();
+      document.documentElement.removeAttribute("data-wide-in-view");
+    };
+  }, []);
+}
+
 export function Toc({ items }: { items: TocItem[] }) {
   const ids = useRef(items.map((i) => i.id)).current;
   const active = useActiveHeading(ids);
+  useStepAsideForWideFigures();
   const list = useRef<HTMLOListElement>(null);
   const [marker, setMarker] = useState({ top: 0, height: 0 });
 

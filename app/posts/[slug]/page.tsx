@@ -213,7 +213,7 @@ export default async function PostPage({ params }: Props) {
 
             <aside className="hidden xl:block" data-pagefind-ignore>
               <div className="sticky top-28 pt-20 pb-6">
-                <div className="glass max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-5">
+                <div className="glass max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl p-5" data-toc-panel>
                   <Toc items={toc} />
                 </div>
               </div>

@@ -163,6 +163,50 @@ export const glossary = {
     term: "Spectre",
     def: "A family of CPU flaws that can let code on one web page read memory belonging to another page in the same browser process.",
   },
+  dns: {
+    term: "DNS",
+    def: "The Domain Name System: the internet's phone book. It turns a name like api.example.com into an IP address.",
+  },
+  "ip-address": {
+    term: "IP address",
+    def: "The numeric address of a machine on the internet, like 203.0.113.10. Networks deliver to addresses, not names.",
+  },
+  resolver: {
+    term: "DNS resolver",
+    def: "The server that looks up names for you, usually run by your internet provider, your company or a public DNS service. It remembers answers for a while.",
+  },
+  tcp: {
+    term: "TCP",
+    def: "The protocol that gives two machines a reliable, ordered connection. It opens with a three-message handshake: SYN, SYN-ACK, ACK.",
+  },
+  tls: {
+    term: "TLS",
+    def: "The encryption behind HTTPS. Before any data moves, both sides agree on keys and the browser checks the server's certificate. DevTools still calls it SSL, its old name.",
+  },
+  certificate: {
+    term: "Certificate",
+    def: "A server's ID card for HTTPS: which domain it belongs to, who vouched for it, and when it expires. Browsers refuse expired ones, ones for the wrong name, and ones from an issuer they don't trust.",
+  },
+  "round-trip": {
+    term: "Round trip",
+    def: "The time for a message to reach the other side and for the reply to come back. Distance alone costs about 1 ms of round trip for every 100 km.",
+  },
+  ttfb: {
+    term: "TTFB",
+    def: "Time to first byte: how long from sending a request until the first byte of the response arrives. It includes the trip there and back, not just the server's work.",
+  },
+  "connection-reuse": {
+    term: "Connection reuse",
+    def: "Keeping a connection open after a response, so the next request to the same server skips DNS, the TCP handshake and TLS. HTTP/1.1 calls it keep-alive.",
+  },
+  http2: {
+    term: "HTTP/2",
+    def: "A newer version of HTTP that carries many requests at once over a single connection, so they don't queue behind HTTP/1.1's limit of six connections per server.",
+  },
+  compression: {
+    term: "Compression",
+    def: "Shrinking a response before it's sent, usually with gzip or Brotli. Text such as JSON and HTML often gets 70–90% smaller.",
+  },
 } as const;
 
 export type GlossaryId = keyof typeof glossary;
