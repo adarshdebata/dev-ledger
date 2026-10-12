@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { getAuthor } from "@/lib/authors";
 import { formatDate, type PostMeta } from "@/lib/posts";
-import { getChain, getSeries, weekPlace, withBase } from "@/lib/site";
+import { getChain, getSeries, weekName, weekPlace, withBase } from "@/lib/site";
 import { Avatar } from "./author";
 import { PostThumb, thumbFor } from "./post-thumb";
 
@@ -43,6 +43,28 @@ export function PostMetaLine({ post }: { post: PostMeta }) {
       <span aria-hidden="true">·</span>
       <span>{post.readingMinutes} min read</span>
     </div>
+  );
+}
+
+/** One article as a card: thumbnail on top, then where it belongs, title, a two-line subtitle and the date. */
+export function PostTile({ post }: { post: PostMeta }) {
+  const at = weekPlace(post.slug);
+  return (
+    <article className="group relative flex h-full flex-col rounded-2xl border border-line bg-card/70 p-3.5 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-1 hover:border-line-strong hover:shadow-lift motion-reduce:transition-none motion-reduce:hover:translate-y-0">
+      <PostThumb motif={thumbFor(post)} lift={false} />
+      <div className="flex flex-1 flex-col px-1.5 pt-4 pb-1">
+        <p className="truncate font-mono text-[11.5px] font-medium text-accent">{at ? weekName(at.week) : getSeries(post.series)?.title}</p>
+        <h3 className="mt-2 text-[1.2rem] leading-snug font-semibold tracking-tight text-balance">
+          <Link href={`/posts/${post.slug}/`} className="after:absolute after:inset-0">
+            {post.title}
+          </Link>
+        </h3>
+        <p className="mt-2 line-clamp-2 text-[15px] leading-relaxed text-muted">{post.subtitle}</p>
+        <div className="mt-auto pt-4">
+          <PostMetaLine post={post} />
+        </div>
+      </div>
+    </article>
   );
 }
 

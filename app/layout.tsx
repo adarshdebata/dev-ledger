@@ -32,7 +32,8 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth" className={`${inter.variable} ${mono.variable}`}>
-      <body className="flex min-h-dvh flex-col font-sans">
+      {/* Browser extensions such as Grammarly add attributes to <body> before React loads; that's not a real mismatch. */}
+      <body suppressHydrationWarning className="flex min-h-dvh flex-col font-sans">
         <Providers>
           <a
             href="#main"

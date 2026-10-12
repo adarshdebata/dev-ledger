@@ -1,15 +1,14 @@
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight } from "lucide-react";
-import { Avatar, SocialLinks } from "@/components/author";
+import { ArrowRight, ArrowUpRight, BadgeCheck, MousePointerClick } from "lucide-react";
+import { Avatar } from "@/components/author";
 import { HeroWaterfall } from "@/components/hero-waterfall";
 import { Parallax } from "@/components/parallax";
-import { IssueTag, PostCard, PostCover, PostMetaLine, postStage } from "@/components/post-card";
-import { PostThumb, thumbFor } from "@/components/post-thumb";
+import { PostTile } from "@/components/post-card";
 import { WeekList } from "@/components/week-list";
 import { WindField } from "@/components/wind-field";
 import { authors } from "@/lib/authors";
 import { getAllPosts, postsInSeries, seriesRoadmap } from "@/lib/posts";
-import { chains, currentWeek, external, series, site } from "@/lib/site";
+import { currentWeek, external, series, site, weekName } from "@/lib/site";
 
 const fiveQuestions = [
   "What problem does it solve?",
@@ -19,140 +18,120 @@ const fiveQuestions = [
   "What do people often get wrong?",
 ];
 
+/** Headline words rise in one after another (CSS only; still under reduced motion). */
+function Rise({ words, from = 0, className = "" }: { words: string[]; from?: number; className?: string }) {
+  return (
+    <span className={className}>
+      {words.map((w, i) => (
+        <span key={w}>
+          <span className="word-rise" style={{ "--d": `${(from + i) * 70}ms` } as React.CSSProperties}>
+            {w}
+          </span>
+          {i < words.length - 1 && " "}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export default function Home() {
   const posts = getAllPosts();
-  const [featured, ...rest] = posts;
-  const where = featured ? postStage(featured) : undefined;
+  const latest = posts.slice(0, 3);
+  const newest = posts[0];
   const owner = authors[0];
 
   return (
     <>
-      {/* Hero: big type over a quiet field of moving air that drifts a little slower than the page */}
+      {/* Hero: centred and quiet, over a field of moving air that drifts a little slower than the page */}
       <section className="relative isolate overflow-hidden">
         <Parallax distance={110} className="absolute inset-0 -z-10">
           <WindField className="size-full" />
         </Parallax>
-        <div className="container-page pt-20 pb-16 sm:pt-28 sm:pb-24">
-          <p className="eyebrow animate-fade-up text-accent">{site.theme}</p>
-          <h1 className="animate-fade-up mt-6 max-w-4xl text-[3rem] leading-[0.98] font-semibold tracking-[-0.045em] text-balance [animation-delay:60ms] sm:text-[5.25rem]">
-            Engineering,
+        <div className="container-page flex flex-col items-center pt-20 pb-20 text-center sm:pt-28 lg:pb-24">
+          <h1 className="max-w-4xl text-[3.1rem] leading-[0.98] font-semibold tracking-[-0.045em] text-balance sm:text-[5.6rem]">
+            <Rise words={["Engineering,"]} />
             <br />
-            <span className="text-accent">under the hood.</span>
+            <Rise words={["under", "the", "hood."]} from={1} className="text-accent" />
           </h1>
-          <p className="animate-fade-up mt-8 max-w-2xl text-lg leading-relaxed text-muted [animation-delay:120ms] sm:text-xl">
-            {site.tagline} What really happens when you click a button, call an API or hit an error, explained so anyone can
-            follow, then deep enough that experienced engineers still learn something.
-          </p>
-          <p className="animate-fade-up mt-6 font-mono text-[13px] text-subtle [animation-delay:160ms]">{site.hook}</p>
-          <div className="animate-fade-up mt-10 flex flex-wrap items-center gap-3 [animation-delay:200ms]">
-            {featured && (
+          <p className="animate-fade-up mt-7 max-w-xl text-lg leading-relaxed text-muted [animation-delay:280ms] sm:text-xl">{site.tagline}</p>
+          <div className="animate-fade-up mt-9 flex flex-wrap justify-center gap-3 [animation-delay:340ms]">
+            {newest && (
               <Link
-                href={`/posts/${featured.slug}/`}
-                className="inline-flex items-center gap-2 rounded-xl bg-fg px-5 py-3 text-sm font-semibold text-bg transition-transform duration-300 hover:-translate-y-0.5"
+                href={`/posts/${newest.slug}/`}
+                className="inline-flex items-center gap-2 rounded-full bg-fg px-6 py-3 text-sm font-semibold text-bg shadow-lift transition-transform duration-300 hover:-translate-y-0.5"
               >
-                Read the latest <ArrowRight className="size-4" />
+                Start reading <ArrowRight className="size-4" />
               </Link>
             )}
             <Link
-              href="/chains/request/"
-              className="inline-flex items-center gap-2 rounded-xl border border-line-strong px-5 py-3 text-sm font-semibold transition-colors hover:border-fg"
+              href="/series/"
+              className="glass inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold transition-transform duration-300 hover:-translate-y-0.5"
             >
-              Follow one request
+              Browse series
             </Link>
           </div>
-          {owner && (
-            <div className="animate-fade-up mt-10 flex flex-wrap items-center gap-x-3 gap-y-1 [animation-delay:240ms]">
-              <Avatar person={{ name: owner.name, author: owner }} size={30} />
-              <p className="text-[14px] text-muted">
-                Written by{" "}
-                <Link href={`/about/#${owner.id}`} className="font-medium text-fg hover:text-accent">
-                  {owner.name}
-                </Link>
-                {owner.title && <span className="hidden sm:inline"> · {owner.title}</span>}
-              </p>
-              <SocialLinks author={owner} className="-ml-1" />
-            </div>
+          {newest && (
+            <Link
+              href={`/posts/${newest.slug}/`}
+              className="glass animate-fade-up group mt-6 inline-flex max-w-full items-center gap-2.5 rounded-full py-1.5 pr-3.5 pl-1.5 text-[13.5px] text-muted [animation-delay:400ms] hover:text-fg"
+            >
+              <span className="shrink-0 rounded-full bg-accent-soft px-2.5 py-0.5 font-mono text-[11px] font-semibold text-white">New</span>
+              <span className="truncate">{newest.title}</span>
+              <ArrowRight className="size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
+            </Link>
           )}
+
+          {/* Floating cards, as in the reference; only where there's room for them */}
+          <div role="group" aria-label="At a glance" className="animate-fade-up mt-16 hidden w-full items-end justify-center gap-6 [animation-delay:520ms] lg:flex">
+            <HeroWaterfall compact className="-rotate-2 text-left transition-transform duration-300 hover:rotate-0" />
+            <div className="flex flex-col items-center gap-3 pb-6">
+              <span className="glass inline-flex items-center gap-2 rounded-full px-4 py-2 text-[13.5px] font-medium shadow-lift">
+                <MousePointerClick className="size-4 text-accent" /> Interactive diagrams
+              </span>
+              <span className="glass inline-flex items-center gap-2 rounded-full px-4 py-2 text-[13.5px] font-medium shadow-lift">
+                <BadgeCheck className="size-4 text-teal" /> Checked in real Chrome
+              </span>
+            </div>
+            {owner && (
+              <Link
+                href={`/about/#${owner.id}`}
+                className="glass flex w-[17rem] rotate-2 items-center gap-3 rounded-2xl p-3.5 text-left shadow-lift transition-transform duration-300 hover:rotate-0"
+              >
+                <Avatar person={{ name: owner.name, author: owner }} size={44} />
+                <span className="min-w-0">
+                  <span className="eyebrow block text-subtle">Written by</span>
+                  <span className="mt-0.5 block truncate font-semibold">{owner.name}</span>
+                  <span className="block truncate text-[12.5px] text-muted">Backend developer</span>
+                </span>
+              </Link>
+            )}
+          </div>
         </div>
       </section>
 
-      {/* Featured: an editorial block, not a card */}
+      {/* Latest: the three newest articles, nothing more */}
       <section id="latest" className="container-page scroll-mt-28">
         <div className="border-t border-line pt-10">
-          <SectionLabel>Latest</SectionLabel>
-          {featured ? (
-            <article className="group relative mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_16rem]">
-              <div>
-                <h2 className="max-w-3xl text-3xl leading-[1.1] font-semibold tracking-[-0.03em] text-balance sm:text-[2.75rem]">
-                  <Link href={`/posts/${featured.slug}/`} className="after:absolute after:inset-0">
-                    {featured.title}
-                  </Link>
-                </h2>
-                <p className="mt-4 max-w-2xl text-lg leading-relaxed text-muted">{featured.subtitle}</p>
-                <p className="mt-3 max-w-2xl text-[15.5px] leading-relaxed text-muted">{featured.summary}</p>
-                <span className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-accent">
-                  Read the article <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-1" />
-                </span>
-              </div>
-              <dl className="space-y-4 border-line text-sm lg:border-l lg:pl-8">
-                {featured.cover ? <PostCover post={featured} /> : <PostThumb motif={thumbFor(featured)} />}
-                <div>
-                  <dt className="eyebrow text-subtle">Part of</dt>
-                  <dd className="mt-1.5 flex flex-col gap-1">
-                    <IssueTag post={featured} />
-                    {currentWeek.days.some((d) => d.slug === featured.slug) && <span className="text-muted">{currentWeek.title}</span>}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="eyebrow text-subtle">Published</dt>
-                  <dd className="mt-1.5"><PostMetaLine post={featured} /></dd>
-                </div>
-                <div>
-                  <dt className="eyebrow text-subtle">Series</dt>
-                  <dd className="mt-1.5 text-muted">{series[featured.series - 1].title}</dd>
-                </div>
-                {where && (
-                  <div>
-                    <dt className="eyebrow text-subtle">Path</dt>
-                    <dd className="mt-1.5 text-teal">
-                      {where.chain.title} · {where.stage.name}
-                    </dd>
-                  </div>
-                )}
-              </dl>
-            </article>
+          <div className="flex items-baseline justify-between gap-4">
+            <SectionLabel>Latest</SectionLabel>
+            <Link href="/series/" className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline">
+              View all articles <ArrowRight className="size-4" />
+            </Link>
+          </div>
+          {latest.length > 0 ? (
+            <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {latest.map((p) => (
+                <PostTile key={p.slug} post={p} />
+              ))}
+            </div>
           ) : (
             <p className="mt-6 text-muted">The first article is on its way.</p>
           )}
-          {rest.length > 0 && (
-            <div className="mt-10">
-              {rest.slice(0, 6).map((p) => (
-                <PostCard key={p.slug} post={p} />
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* The current week: one theme, one post a day */}
-      <section id="this-week" className="container-page mt-24 scroll-mt-28">
-        <div className="grid gap-10 border-t border-line pt-10 lg:grid-cols-[minmax(0,1fr)_25rem] lg:gap-14">
-          <div>
-            <SectionLabel>This week</SectionLabel>
-            <h2 className="mt-4 max-w-xl text-3xl leading-tight font-semibold tracking-[-0.03em]">
-              Week {currentWeek.n}: {currentWeek.title}
-            </h2>
-            <p className="mt-4 max-w-xl text-[16px] leading-relaxed text-muted">
-              {currentWeek.blurb} Start at the top for the full picture, or jump to any post.
-            </p>
-            <WeekList week={currentWeek} className="mt-7 max-w-xl" />
-          </div>
-          <HeroWaterfall />
         </div>
       </section>
 
       {/* Series */}
-      <section id="series" className="container-page mt-24 scroll-mt-28">
+      <section id="series" className="container-page mt-28 scroll-mt-28">
         <div className="border-t border-line pt-10">
           <SectionLabel>Series</SectionLabel>
           <h2 className="mt-4 text-3xl leading-tight font-semibold tracking-[-0.03em]">Five series, one hundred questions</h2>
@@ -165,7 +144,7 @@ export default function Home() {
               const covered = seriesRoadmap(s.n).filter((r) => r.post).length;
               const count = postsInSeries(s.n).length;
               return (
-                <Link key={s.n} href={`/series/${s.n}/`} className="group flex flex-col bg-bg p-6 transition-colors hover:bg-card">
+                <Link key={s.n} href={`/series/${s.n}/`} className="group flex flex-col bg-bg p-7 transition-colors hover:bg-card">
                   <span className="font-mono text-sm font-medium text-accent">{String(s.n).padStart(2, "0")}</span>
                   <h3 className="mt-3 text-lg leading-snug font-semibold tracking-tight">{s.title}</h3>
                   <p className="mt-2 text-[15px] leading-relaxed text-muted">{s.blurb}</p>
@@ -181,7 +160,7 @@ export default function Home() {
                 </Link>
               );
             })}
-            <div className="flex flex-col bg-bg-soft p-6">
+            <div className="flex flex-col bg-bg-soft p-7">
               <p className="text-lg font-semibold tracking-tight">Every article answers five questions</p>
               <ol className="mt-4 space-y-2.5 text-[15px] text-muted">
                 {fiveQuestions.map((q, i) => (
@@ -196,32 +175,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Chains */}
-      <section id="chains" className="container-page mt-24 scroll-mt-28">
-        <div className="border-t border-line pt-10">
-          <SectionLabel>Chains</SectionLabel>
-          <h2 className="mt-4 text-3xl leading-tight font-semibold tracking-[-0.03em]">Follow one thing all the way</h2>
-          <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-            {chains.map((c) => (
-              <Link
-                key={c.id}
-                href={`/chains/${c.id}/`}
-                className="group rounded-2xl border border-line p-6 transition-colors hover:border-line-strong hover:bg-card"
-              >
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-semibold tracking-tight">{c.title}</h3>
-                  <ArrowRight className="size-5 text-subtle transition-all duration-300 group-hover:translate-x-1 group-hover:text-accent" />
-                </div>
-                <p className="mt-2 text-[15px] leading-relaxed text-muted">{c.blurb}</p>
-                <p className="mt-5 font-mono text-[12px] leading-relaxed text-subtle">{c.stages.map((s) => s.name).join("  →  ")}</p>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Case studies */}
-      <section className="container-page mt-24">
+      <section className="container-page mt-28">
         <div className="border-t border-line pt-10">
           <div className="flex items-baseline justify-between gap-4">
             <SectionLabel>Case studies</SectionLabel>
@@ -237,6 +192,20 @@ export default function Home() {
             </span>
             <ArrowUpRight className="size-5 shrink-0 text-subtle transition-all duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-accent" />
           </a>
+        </div>
+      </section>
+
+      {/* Upcoming this week goes last: none of it can be read yet, and attention drops sharply after the first screens (NN/g). */}
+      <section id="this-week" className="container-page mt-28 scroll-mt-28">
+        <div className="grid gap-10 border-t border-line pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] lg:gap-14">
+          <div>
+            <h2 className="text-3xl leading-tight font-semibold tracking-[-0.03em]">Upcoming this week</h2>
+            <p className="mt-3 font-mono text-[13px] font-medium text-accent">{weekName(currentWeek)}</p>
+            <p className="mt-4 max-w-md text-[16px] leading-relaxed text-muted">
+              {currentWeek.blurb} Start at the top for the full picture, or jump to any post.
+            </p>
+          </div>
+          <WeekList week={currentWeek} />
         </div>
       </section>
     </>

@@ -97,11 +97,12 @@ const MOTIFS: Record<Motif, React.ReactNode> = {
   ),
 };
 
-export function PostThumb({ motif, className = "" }: { motif: Motif; className?: string }) {
+/** `lift` nudges the thumbnail up on hover; turn it off when the whole card already lifts. */
+export function PostThumb({ motif, className = "", lift = true }: { motif: Motif; className?: string; lift?: boolean }) {
   return (
     <div
       aria-hidden="true"
-      className={`thumb overflow-hidden rounded-xl border border-line bg-bg-soft transition-[border-color,transform] duration-300 group-hover:-translate-y-0.5 group-hover:border-line-strong motion-reduce:transition-none ${className}`}
+      className={`thumb overflow-hidden rounded-xl border border-line bg-bg-soft transition-[border-color,transform] duration-300 group-hover:border-line-strong motion-reduce:transition-none ${lift ? "group-hover:-translate-y-0.5" : ""} ${className}`}
     >
       <svg viewBox="0 0 160 100" className="block h-auto w-full">
         {MOTIFS[motif]}

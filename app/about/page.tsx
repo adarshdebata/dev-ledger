@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AuthorCard, Avatar } from "@/components/author";
+import { Avatar, DevCard } from "@/components/author";
 import { PageHeader } from "@/components/page-header";
 import { authors } from "@/lib/authors";
 import { contributorStats } from "@/lib/git-meta";
-import { alternates, site } from "@/lib/site";
+import { alternates, currentWeek, site, weekName } from "@/lib/site";
 
 const n = (x: number) => x.toLocaleString("en-GB");
 
@@ -24,6 +24,10 @@ const questions = [
 
 export default function AboutPage() {
   const stats = contributorStats();
+  const statsFor = (id: string) => stats.find((s) => s.author?.id === id);
+  // People with commits but no profile in content/authors.json still get credit.
+  const others = stats.filter((s) => !s.author);
+
   return (
     <>
       <PageHeader eyebrow="About" title="A running record of backend engineering">
@@ -53,13 +57,6 @@ export default function AboutPage() {
             Each article ends with those five answers in one table, so the whole idea fits on one screen when you
             come back later.
           </p>
-          <h2>Who writes it</h2>
-          <p>
-            I&apos;m {site.author.name}, a backend developer working in fintech and digital payments, mostly with
-            Node.js and event-driven microservices. Payments teach you quickly that retries, timeouts and duplicates
-            are real problems, not theory. Much of what you read here comes from those lessons, written up in a
-            general way so anyone can use them.
-          </p>
           <h2>Reading, reusing, correcting</h2>
           <p>
             Articles are licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> and code is{" "}
@@ -69,7 +66,6 @@ export default function AboutPage() {
           </p>
         </div>
         <aside className="space-y-4 lg:sticky lg:top-28 lg:self-start">
-          {authors.length === 1 && <AuthorCard author={authors[0]} eyebrow="Author" />}
           <Link
             href="/chains/request/"
             className="block rounded-2xl border border-line p-5 transition-colors hover:border-line-strong hover:bg-card"
@@ -80,60 +76,48 @@ export default function AboutPage() {
         </aside>
       </div>
 
-      {authors.length > 1 && (
-        <section className="container-page pb-4" aria-labelledby="authors">
-          <h2 id="authors" className="text-2xl font-semibold tracking-tight">
-            Authors
+      <section className="container-page pb-4" aria-labelledby="who-writes-it">
+        <div className="border-t border-line pt-12">
+          <h2 id="who-writes-it" className="text-3xl leading-tight font-semibold tracking-[-0.03em]">
+            Who writes it
           </h2>
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {authors.map((a) => (
-              <AuthorCard key={a.id} author={a} />
+          <p className="mt-4 max-w-2xl text-[16.5px] leading-relaxed text-muted">
+            I&apos;m {site.author.name}, a backend developer working in fintech and digital payments, mostly with
+            Node.js and event-driven microservices. Payments teach you quickly that retries, timeouts and duplicates
+            are real problems, not theory. Much of what you read here comes from those lessons, written up in a
+            general way so anyone can use them.
+          </p>
+
+          <div className="mt-10 grid grid-cols-1 gap-6">
+            {authors.map((a, i) => (
+              <DevCard key={a.id} author={a} stats={statsFor(a.id)} status={i === 0 ? `Writing ${weekName(currentWeek)}` : undefined} />
             ))}
           </div>
-        </section>
-      )}
 
-      {stats.length > 0 && (
-        <section className="container-page pt-8 pb-4" aria-labelledby="contributions">
-          <div className="border-t border-line pt-10">
-            <h2 id="contributions" className="text-2xl font-semibold tracking-tight">
-              Contributions
-            </h2>
-            <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted">
-              Counted from the Git history every time the site is built. <strong className="text-fg">Articles</strong> are the
-              ones a person first wrote. <strong className="text-fg">Commits</strong> and{" "}
-              <strong className="text-fg">lines changed</strong> cover the whole project, leaving out merge commits and the
-              lockfile. Lines changed show how much work went in, not how valuable it was, so treat them as a rough guide.
-            </p>
-            <ul className={`mt-6 grid grid-cols-1 gap-4 ${stats.length > 1 ? "md:grid-cols-2 lg:grid-cols-3" : "max-w-2xl"}`}>
-              {stats.map((c) => (
+          <p id="contributions" className="mt-5 max-w-3xl scroll-mt-28 text-[13.5px] leading-relaxed text-subtle">
+            Counted from the Git history every time the site is built. <strong className="text-muted">Articles</strong> are the
+            ones a person first wrote. <strong className="text-muted">Commits</strong> and{" "}
+            <strong className="text-muted">lines changed</strong> cover the whole project, leaving out merge commits and the
+            lockfile. Lines changed show how much work went in, not how valuable it was, so treat them as a rough guide.
+          </p>
+
+          {others.length > 0 && (
+            <ul className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" aria-label="Other contributors">
+              {others.map((c) => (
                 <li key={c.name} className="flex items-center gap-4 rounded-2xl border border-line bg-card p-5">
                   <Avatar person={c} size={44} />
                   <div className="min-w-0">
                     <p className="font-semibold">{c.name}</p>
-                    <dl className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[12.5px] text-muted">
-                      <div className="flex gap-1.5">
-                        <dt>Articles</dt>
-                        <dd className="font-semibold text-fg">{n(c.articles)}</dd>
-                      </div>
-                      <div className="flex gap-1.5">
-                        <dt>Commits</dt>
-                        <dd className="font-semibold text-fg">{n(c.commits)}</dd>
-                      </div>
-                      <div className="flex gap-1.5">
-                        <dt>Lines changed</dt>
-                        <dd className="font-semibold text-fg">
-                          <span className="text-ok">+{n(c.added)}</span> <span className="text-bad">−{n(c.removed)}</span>
-                        </dd>
-                      </div>
-                    </dl>
+                    <p className="mt-1 font-mono text-[12.5px] text-muted">
+                      {n(c.articles)} articles · {n(c.commits)} commits · +{n(c.added)} −{n(c.removed)}
+                    </p>
                   </div>
                 </li>
               ))}
             </ul>
-          </div>
-        </section>
-      )}
+          )}
+        </div>
+      </section>
     </>
   );
 }

@@ -47,78 +47,83 @@ export function SiteHeader() {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : !href.startsWith("/#") && pathname.startsWith(href.replace(/\/$/, ""));
 
+  // Three floating glass pills: logo, links, tools. The outer columns share the leftover space equally.
+  const pill = `glass flex h-12 items-center rounded-2xl transition-shadow duration-300 ${scrolled ? "shadow-lift" : ""}`;
+
   return (
     <header data-pagefind-ignore className="sticky top-0 z-40 px-3 pt-3 sm:px-4">
-      <div className={`glass mx-auto max-w-[73.5rem] rounded-2xl transition-shadow duration-300 ${scrolled ? "shadow-lift" : ""}`}>
-        {/* Logo left, links centred, tools right: the outer columns share the leftover space equally. */}
-        <div className="flex h-14 items-center gap-3 px-3 sm:px-4 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
-          <Link href="/" className="justify-self-start rounded-lg" aria-label="Dev Ledger home">
-            <Wordmark />
-          </Link>
+      <div className="mx-auto flex max-w-[73.5rem] items-center gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <Link href="/" className={`${pill} justify-self-start px-3.5`} aria-label="Dev Ledger home">
+          <Wordmark />
+        </Link>
 
-          <nav className="hidden items-center gap-0.5 lg:flex" aria-label="Main">
-            {nav.map((n) => (
-              <Link
-                key={n.href}
-                href={n.href}
-                aria-current={isActive(n.href) ? "page" : undefined}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors hover:text-fg ${
-                  isActive(n.href) ? "text-fg" : "text-muted"
-                }`}
-              >
-                {n.label}
-              </Link>
-            ))}
-          </nav>
-
-          <div className="ml-auto flex items-center gap-1 lg:ml-0 lg:justify-self-end">
-            {BLOG_PAGES.test(pathname) && <Search />}
-            <a href="https://github.com/adarshdebata/dev-ledger" className={`${iconBtn} hidden sm:grid`} aria-label="Source on GitHub">
-              <GitHubIcon className="size-[17px]" />
-            </a>
-            <ThemeToggle />
-            <button
-              type="button"
-              onClick={() => setOpen((o) => !o)}
-              className={`${iconBtn} lg:hidden`}
-              aria-label={open ? "Close menu" : "Open menu"}
-              aria-expanded={open}
+        <nav className={`${pill} hidden gap-0.5 px-1.5 lg:flex`} aria-label="Main">
+          {nav.map((n) => (
+            <Link
+              key={n.href}
+              href={n.href}
+              aria-current={isActive(n.href) ? "page" : undefined}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+                isActive(n.href) ? "bg-accent-tint text-fg" : "text-muted hover:bg-bg-soft hover:text-fg"
+              }`}
             >
-              {open ? <X className="size-5" /> : <Menu className="size-5" />}
-            </button>
-          </div>
+              {n.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className={`${pill} ml-auto gap-1 px-1.5 lg:ml-0 lg:justify-self-end`}>
+          {BLOG_PAGES.test(pathname) && <Search />}
+          <a href="https://github.com/adarshdebata/dev-ledger" className={`${iconBtn} hidden sm:grid`} aria-label="Source on GitHub">
+            <GitHubIcon className="size-[17px]" />
+          </a>
+          <ThemeToggle />
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className={`${iconBtn} lg:hidden`}
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+          >
+            {open ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
         </div>
-
-        <AnimatePresence initial={false}>
-          {open && (
-            <motion.nav
-              key="mobile-nav"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              className="overflow-hidden lg:hidden"
-              aria-label="Mobile"
-            >
-              <div className="flex flex-col border-t border-line px-3 py-2">
-                {nav.map((n) => (
-                  <Link key={n.href} href={n.href} className="rounded-lg px-2 py-3 text-[15px] font-medium text-muted hover:text-fg">
-                    {n.label}
-                  </Link>
-                ))}
-                <div className="mt-1 flex gap-4 border-t border-line px-2 pt-3 pb-2 text-sm text-muted">
-                  <a href={`${base}/rss.xml`} className="flex items-center gap-1.5 hover:text-fg">
-                    <Rss className="size-4" /> RSS
-                  </a>
-                  <a href="https://github.com/adarshdebata/dev-ledger" className="flex items-center gap-1.5 hover:text-fg">
-                    <GitHubIcon className="size-4" /> GitHub
-                  </a>
-                </div>
-              </div>
-            </motion.nav>
-          )}
-        </AnimatePresence>
       </div>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.nav
+            key="mobile-nav"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="glass mx-auto mt-2 max-w-[73.5rem] rounded-2xl shadow-lift lg:hidden"
+            aria-label="Mobile"
+          >
+            <div className="flex flex-col px-3 py-2">
+              {nav.map((n) => (
+                <Link
+                  key={n.href}
+                  href={n.href}
+                  aria-current={isActive(n.href) ? "page" : undefined}
+                  className={`rounded-xl px-3 py-3 text-[15px] font-medium hover:text-fg ${isActive(n.href) ? "bg-accent-tint text-fg" : "text-muted"}`}
+                >
+                  {n.label}
+                </Link>
+              ))}
+              <div className="mt-1 flex gap-4 border-t border-line px-3 pt-3 pb-2 text-sm text-muted">
+                <a href={`${base}/rss.xml`} className="flex items-center gap-1.5 hover:text-fg">
+                  <Rss className="size-4" /> RSS
+                </a>
+                <a href="https://github.com/adarshdebata/dev-ledger" className="flex items-center gap-1.5 hover:text-fg">
+                  <GitHubIcon className="size-4" /> GitHub
+                </a>
+              </div>
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
     </header>
   );
 }

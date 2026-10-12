@@ -10,8 +10,9 @@ export function Parallax({ children, distance = 90, className }: { children?: Re
   const reduce = useReducedMotion();
   const { scrollY } = useScroll();
   const y = useTransform(scrollY, [0, 800], [0, distance], { clamp: true });
+  // Always pass a transform, so the server's markup and the browser's first render match.
   return (
-    <motion.div aria-hidden="true" className={className} style={reduce ? undefined : { y }}>
+    <motion.div aria-hidden="true" className={className} style={{ y: reduce ? 0 : y }}>
       {children}
     </motion.div>
   );

@@ -59,6 +59,100 @@ export function SocialLinks({ author, className = "" }: { author: Author; classN
   );
 }
 
+/** The same links as pills with their names, for roomier places such as the About page. */
+export function SocialPills({ author, className = "" }: { author: Author; className?: string }) {
+  return (
+    <ul className={`flex flex-wrap items-center gap-2 ${className}`} aria-label={`${author.name} elsewhere`}>
+      {socialLinks(author).map((s) => (
+        <li key={s.kind}>
+          <a
+            href={s.href}
+            target="_blank"
+            rel="noopener noreferrer me"
+            className="inline-flex items-center gap-2 rounded-full border border-line bg-bg px-3.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-line-strong hover:text-fg"
+          >
+            <BrandIcon kind={s.kind} className="size-[13px]" />
+            {s.label}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+type Stats = { articles: number; commits: number; added: number; removed: number };
+const n = (x: number) => x.toLocaleString("en-GB");
+
+/**
+ * A portfolio-style developer card: a status line and links on top, then a tilted photo beside a big name,
+ * the role between thin rules, and numbers from the Git history underneath.
+ */
+export function DevCard({ author, stats, status }: { author: Author; stats?: Stats; status?: string }) {
+  const tiles: [string, string][] = stats
+    ? [
+        ["Articles written", n(stats.articles)],
+        ["Commits", n(stats.commits)],
+        ["Lines changed", `+${n(stats.added)} −${n(stats.removed)}`],
+      ]
+    : [];
+  return (
+    <div id={author.id} className="scroll-mt-28 overflow-hidden rounded-3xl border border-line bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5 sm:px-8">
+        {status ? (
+          <span className="inline-flex items-center gap-2 font-mono text-[12px] text-muted">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-50 motion-reduce:hidden" />
+              <span className="relative inline-flex size-2 rounded-full bg-ok" />
+            </span>
+            {status}
+          </span>
+        ) : (
+          <span />
+        )}
+        <SocialPills author={author} />
+      </div>
+
+      <div className="grid gap-8 px-5 py-9 sm:px-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-center lg:gap-12 lg:py-12">
+        <div className="flex items-center gap-5 sm:gap-7">
+          {author.avatar && (
+            <img
+              src={withBase(author.avatar)}
+              alt={`${author.name}'s profile picture`}
+              width={112}
+              height={112}
+              loading="lazy"
+              decoding="async"
+              className="size-20 shrink-0 -rotate-6 rounded-[1.4rem] border-4 border-bg object-cover shadow-lift sm:size-28 sm:rounded-[1.75rem]"
+            />
+          )}
+          <div className="min-w-0">
+            <p className="font-mono text-sm font-semibold tracking-widest text-accent">I&apos;M</p>
+            <p className="mt-1 text-[2.1rem] leading-[0.95] font-semibold tracking-[-0.04em] text-balance uppercase sm:text-[3.2rem]">{author.name}</p>
+          </div>
+        </div>
+        <div className="border-y border-line py-5 font-mono text-[14px] leading-relaxed text-muted">
+          {author.title && <p className="font-semibold text-fg">{author.title}</p>}
+          {author.bio && <p className="mt-2">{author.bio}</p>}
+        </div>
+      </div>
+
+      {tiles.length > 0 && (
+        <dl className="grid grid-cols-1 gap-px border-t border-line bg-line sm:grid-cols-3">
+          {tiles.map(([label, value], i) => (
+            <div key={label} className="bg-card px-5 py-5 sm:px-8">
+              <dt className="font-mono text-[11.5px] text-subtle">
+                {"// "}
+                {String(i + 1).padStart(2, "0")} {label}
+              </dt>
+              <dd className="mt-1.5 text-2xl font-semibold tracking-tight tabular-nums">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 /** A profile card. `wide` lays it out in one row, for when there's only one person to show. */
 export function AuthorCard({ author, eyebrow, wide = false }: { author: Author; eyebrow?: string; wide?: boolean }) {
   return (
