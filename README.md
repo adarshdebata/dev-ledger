@@ -80,6 +80,22 @@ Pushing to `main` builds the site and deploys it with GitHub Actions
 deployed. In the repository settings, **Pages → Source** must be set to
 **GitHub Actions**.
 
+## Security
+
+- **Content-Security-Policy.** GitHub Pages can't send custom response headers,
+  so [`scripts/csp.mjs`](scripts/csp.mjs) adds the policy to every exported page
+  as a `<meta http-equiv>` tag. Scripts may only come from the site itself, plus
+  the few inline scripts Next.js writes, each allowed by its SHA-256 hash.
+  `'wasm-unsafe-eval'` is there only for Pagefind's WebAssembly search. A
+  `<meta>` policy can't set `frame-ancestors`; the site has nothing to click
+  that changes state, so framing it does no harm.
+- **No third-party requests.** Fonts, images, scripts and the search index are
+  all served from the site's own origin.
+- **Dependencies.** `pnpm audit` must stay at zero findings. The
+  [audit workflow](.github/workflows/audit.yml) checks every change and runs
+  weekly, and Dependabot proposes updates. Version overrides live in
+  [`pnpm-workspace.yaml`](pnpm-workspace.yaml).
+
 ## Licences
 
 - Articles in [`content/`](content): [CC BY 4.0](content/LICENSE.md)

@@ -18,6 +18,8 @@ export const metadata: Metadata = {
   alternates: { types: { "application/rss+xml": [{ url: "/rss.xml", title: site.name }] } },
   openGraph: { type: "website", siteName: site.name, locale: "en_GB" },
   twitter: { card: "summary_large_image" },
+  // Other sites see only our origin, never the page a reader came from.
+  referrer: "strict-origin-when-cross-origin",
 };
 
 export const viewport: Viewport = {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { CornerDownLeft, FileText, Hash, Search as SearchIcon } from "lucide-react";
 
 type Sub = { title: string; url: string; excerpt: string };
@@ -9,7 +9,18 @@ type Pagefind = {
   options: (o: Record<string, unknown>) => Promise<void>;
   search: (q: string) => Promise<{ results: { id: string; data: () => Promise<ResultData> }[] } | null>;
 };
-type Hit = { key: string; title: string; url: string; excerpt: string; sub: boolean };
+type Part = { text: string; mark: boolean };
+type Hit = { key: string; title: string; url: string; excerpt: Part[]; sub: boolean };
+
+/**
+ * Pagefind returns excerpts as HTML with <mark> around the matches. Keep the text and those marks
+ * only, and render them as React nodes, so no HTML from the index is ever injected into the page.
+ */
+function excerptParts(html: string): Part[] {
+  const t = document.createElement("template"); // parsed inertly: nothing in it runs or loads
+  t.innerHTML = html;
+  return [...t.content.childNodes].map((n) => ({ text: n.textContent ?? "", mark: n.nodeName === "MARK" }));
+}
 
 const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 let pagefind: Promise<Pagefind | null> | null = null;
@@ -75,9 +86,9 @@ export function Search() {
       if (cancelled) return;
       const next: Hit[] = [];
       for (const d of data) {
-        next.push({ key: d.url, title: d.meta.title ?? d.url, url: d.url, excerpt: d.excerpt, sub: false });
+        next.push({ key: d.url, title: d.meta.title ?? d.url, url: d.url, excerpt: excerptParts(d.excerpt), sub: false });
         for (const s of (d.sub_results ?? []).filter((s) => s.url !== d.url).slice(0, 3)) {
-          next.push({ key: s.url, title: s.title, url: s.url, excerpt: s.excerpt, sub: true });
+          next.push({ key: s.url, title: s.title, url: s.url, excerpt: excerptParts(s.excerpt), sub: true });
         }
       }
       setHits(next);
@@ -179,10 +190,9 @@ export function Search() {
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{h.title}</span>
-                    <span
-                      className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-muted"
-                      dangerouslySetInnerHTML={{ __html: h.excerpt }}
-                    />
+                    <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-muted">
+                      {h.excerpt.map((p, k) => (p.mark ? <mark key={k}>{p.text}</mark> : <Fragment key={k}>{p.text}</Fragment>))}
+                    </span>
                   </span>
                   {i === active && <CornerDownLeft className="mt-0.5 size-4 shrink-0 text-subtle" />}
                 </a>

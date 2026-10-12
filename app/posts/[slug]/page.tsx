@@ -75,7 +75,8 @@ export default async function PostPage({ params }: Props) {
     <>
       <ReadingProgress />
       <RevealOnScroll />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {/* "<" is escaped so no title or summary can ever close this tag early. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
 
       <article className="relative isolate">
         <div

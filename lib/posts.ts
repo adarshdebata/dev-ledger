@@ -1,7 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
-import matter from "gray-matter";
+import { parse as parseYaml } from "yaml";
 import { chains, roadmap, site, type ChainId } from "./site";
+
+/** Splits a file into its YAML frontmatter (between the opening `---` lines) and the body after it. */
+export function parseFrontmatter(raw: string): { data: Record<string, unknown>; content: string } {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(raw);
+  if (!m) return { data: {}, content: raw };
+  const data = parseYaml(m[1]) ?? {};
+  if (typeof data !== "object" || Array.isArray(data)) throw new Error("frontmatter must be a YAML mapping");
+  return { data: data as Record<string, unknown>, content: raw.slice(m[0].length) };
+}
 
 const POSTS_DIR = path.join(process.cwd(), "content", "posts");
 
@@ -16,8 +25,15 @@ export type PostMeta = {
   tags: string[];
   summary: string;
   cover?: string;
+  /** Id of the original author in content/authors.json; Git history fills in who updated it. */
+  author?: string;
+  /** Which animated thumbnail to draw on cards. */
+  thumb?: Thumb;
   readingMinutes: number;
 };
+
+export const THUMBS = ["journey", "origins", "shield"] as const;
+export type Thumb = (typeof THUMBS)[number];
 
 export type Post = PostMeta & { source: string };
 
@@ -37,7 +53,7 @@ function readingMinutes(source: string) {
 
 function loadPost(slug: string): Post {
   const raw = fs.readFileSync(path.join(POSTS_DIR, slug, "index.mdx"), "utf8");
-  const { data, content } = matter(raw);
+  const { data, content } = parseFrontmatter(raw);
 
   for (const key of ["title", "subtitle", "date", "series", "roadmap", "summary"]) {
     if (data[key] === undefined || data[key] === "") fail(slug, `missing frontmatter "${key}"`);
@@ -45,11 +61,14 @@ function loadPost(slug: string): Post {
   const series = Number(data.series);
   if (!Number.isInteger(series) || series < 1 || series > 5) fail(slug, `"series" must be 1–5`);
   if (!Array.isArray(data.roadmap)) fail(slug, `"roadmap" must be a list of item numbers`);
-  if (data.chain && !chains.some((c) => c.id === data.chain)) fail(slug, `unknown chain "${data.chain}"`);
-  const tags: string[] = (data.tags ?? []).map((t: unknown) => String(t));
+  const chain = data.chain === undefined ? undefined : String(data.chain);
+  if (chain && !chains.some((c) => c.id === chain)) fail(slug, `unknown chain "${chain}"`);
+  const tags = (Array.isArray(data.tags) ? data.tags : []).map((t: unknown) => String(t));
   for (const t of tags) if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(t)) fail(slug, `tag "${t}" must be lowercase-kebab-case`);
-  const date = new Date(data.date);
-  if (Number.isNaN(date.getTime())) fail(slug, `invalid date "${data.date}"`);
+  const date = new Date(String(data.date));
+  if (Number.isNaN(date.getTime())) fail(slug, `invalid date "${String(data.date)}"`);
+  const thumb = data.thumb === undefined ? undefined : String(data.thumb);
+  if (thumb && !THUMBS.includes(thumb as Thumb)) fail(slug, `"thumb" must be one of ${THUMBS.join(", ")}`);
 
   return {
     slug,
@@ -58,10 +77,12 @@ function loadPost(slug: string): Post {
     date: date.toISOString().slice(0, 10),
     series,
     roadmap: data.roadmap.map(Number),
-    chain: data.chain,
+    chain: chain as ChainId | undefined,
     tags,
     summary: String(data.summary),
-    cover: data.cover,
+    cover: data.cover === undefined ? undefined : String(data.cover),
+    author: data.author === undefined ? undefined : String(data.author),
+    thumb: thumb as Thumb | undefined,
     readingMinutes: readingMinutes(content),
     source: content,
   };
