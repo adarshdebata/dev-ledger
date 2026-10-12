@@ -49,10 +49,10 @@ export function HeroWaterfall() {
       </div>
 
       <Link
-        href="/chains/request/"
+        href="/posts/one-request-seven-stops/"
         className="group flex items-center justify-between border-t border-line px-4 py-2.5 text-[12.5px] text-muted transition-colors hover:text-fg"
       >
-        <span>Each bar is a stop on the path</span>
+        <span>Each bar is a stop: learn to read them</span>
         <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
       </Link>
     </div>

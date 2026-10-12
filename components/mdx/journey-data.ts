@@ -17,7 +17,7 @@ export type Stop = {
     phase: Phase;
     ms: number;
     text: string;
-    /** What the console prints when this fails for a fetch() or an image (real Chrome 154 text). */
+    /** What the console prints when this fails for a fetch() or an image (Chrome's net error names). */
     console?: string;
     /** What Chrome shows instead when the failing request is the page itself. */
     page?: string;

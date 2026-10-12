@@ -1,0 +1,328 @@
+---
+title: "One Request, Seven Stops: What Happens After You Press Enter"
+subtitle: "Every bar in your Network tab is a stop on a journey. Learn to read them, and you'll know why a request is slow."
+date: 2026-10-13
+series: 1
+roadmap: [1, 2, 3, 15, 17, 18, 19]
+tags: [http, browser, devtools, performance, dns, tls]
+author: adarshdebata
+thumb: journey
+summary: "A slow request isn't one problem. It's seven possible ones. Every request makes the same seven stops, from the browser's queue to the last byte of the download, and Chrome gives each stop its own bar. Learn to read them, and you'll know exactly where to look."
+---
+
+**You use it every day. But do you actually know what happens underneath?** You press Enter, or your code calls `fetch()`, and a moment later the data is there. That moment feels like one thing. It's actually seven separate steps, and each one can be slow, or fail, for its own reasons.
+
+So when a page feels slow, "the server is slow" is only one of seven possible answers. This article shows you all seven, and how to tell which one you're looking at in about ten seconds.
+
+## What you see
+
+Your dashboard feels sluggish. You open <Term id="devtools">DevTools</Term>, go to the **Network** tab, click the slow request and open its **Timing** tab. This is what you get. The numbers are an illustrative example, but every row name is exactly what Chrome shows:
+
+<TimingTab
+  request="GET https://api.example.com/orders"
+  queuedAt={3.21}
+  startedAt={5.05}
+  timings={{ queueing: 1.84, stalled: 2.1, dns: 118.3, tcp: 148.72, ssl: 157.4, send: 0.21, wait: 642.55, download: 88.91 }}
+  caption="One request to a server about 150 ms away, on a brand-new connection. Total: 1.16 seconds."
+/>
+
+Most people look at the total, sigh, and blame the backend. Before you do, take a guess:
+
+<Predict
+  question="Which of these bars is the only one that includes the server actually doing its work?"
+  options={[
+    "DNS Lookup",
+    "Initial connection",
+    "Waiting for server response",
+    "Content Download",
+  ]}
+  answer={2}
+>
+Only **Waiting for server response**. Every other bar is the browser and the network: finding the server, connecting to it, and carrying bytes back and forth. And even the waiting bar isn't all server time, as you'll see at stop 6.
+</Predict>
+
+Now look at the numbers again. The server's bar is the longest, at 643 ms. But 424 ms went on finding the server and connecting to it, before the request was even sent. That's over a third of the total, and no amount of backend tuning would touch it.
+
+Each of these rows is a stop on the journey. There are seven.
+
+## What's underneath: seven stops
+
+Here's the same request, one stop at a time. Press **Next** to move it forward and watch its DevTools row fill in. Then try the two switches: **Reused connection** shows what a second request skips, and **Break this stop** shows what the stop you're on looks like when it goes wrong.
+
+<RequestJourney />
+
+Now let's slow down at each stop and ask the question that matters: *why is this step here at all?*
+
+### Stop 1: the queue. Why does a request wait before it starts?
+
+Before anything leaves your computer, the browser does two things.
+
+First, it checks its <Term id="cache">cache</Term>. If it already has a fresh copy of this response, the request never leaves your machine. DevTools then shows `(memory cache)` or `(disk cache)` in the **Size** column, and the timing is almost zero.
+
+Second, it needs a connection to the server, and connections are limited. Over HTTP/1.1, Chrome opens at most **six connections to the same server**. A seventh request has to wait until one of the six is free. We tested this in Chrome by firing eight slow requests at once: the first six started straight away, and the last two waited about a second each, exactly as long as the first ones took.
+
+That waiting shows up as **Queueing** and **Stalled**. Usually they're a few milliseconds. When they're long, the server isn't slow at all. The browser is waiting its turn.
+
+<Callout type="insight" title="Why HTTP/2 makes this queue disappear">
+<Term id="http2">HTTP/2</Term> carries many requests at once over a single connection, so there's no six-connection limit to queue behind. In the Network tab, right-click the column headers and turn on **Protocol**: `h2` or `h3` means HTTP/2 or HTTP/3, and `http/1.1` means the old limit applies.
+</Callout>
+
+### Stop 2: DNS. Why can't the browser just use the name?
+
+Because the internet doesn't deliver to names. It delivers to addresses. `api.example.com` is for humans. The network needs an <Term id="ip-address">IP address</Term> like `203.0.113.10`.
+
+So the browser asks a <Term id="dns">DNS</Term> <Term id="resolver">resolver</Term>: "what's the address for `api.example.com`?" Answers are remembered at several levels, in the browser, the operating system and the resolver itself, so a name you've used recently often resolves in almost no time. A name nobody nearby has asked for in a while can take tens or hundreds of milliseconds. Here it took 118 ms.
+
+That's the whole job of the **DNS Lookup** bar. The next article in this series goes much deeper, including what happens when DNS gives you a wrong answer.
+
+### Stop 3: TCP. Why a handshake before any data?
+
+With an address, the browser opens a <Term id="tcp">TCP</Term> connection. TCP is the part that makes the internet reliable: it numbers every piece of data, so lost or out-of-order pieces can be detected and resent. To do that, both sides first agree on their starting numbers. That agreement is the famous handshake:
+
+1. The browser sends **SYN**: "I'd like to talk; here's my starting number."
+2. The server replies **SYN-ACK**: "Got it; here's mine."
+3. The browser sends **ACK**: "Got yours." Now data can flow.
+
+That's one full <Term id="round-trip">round trip</Term> before a single byte of your request moves. And round trips are set by distance: light in fibre needs about 1 ms for every 100 km there and back, and real routes are longer than a straight line. A server on another continent can easily be 150 ms away, which is roughly what this handshake took.
+
+### Stop 4: TLS. Why does HTTPS cost another round trip?
+
+For HTTPS, the browser and server now set up <Term id="tls">TLS</Term>. They agree on encryption keys, and the browser checks the server's <Term id="certificate">certificate</Term>: is it for this name, is it still valid, and did someone the browser trusts vouch for it? With TLS 1.3 that costs one more round trip. The older TLS 1.2 needed two.
+
+Here's a detail that trips up experienced engineers. DevTools draws TLS as the **SSL** row, but it also counts it inside **Initial connection**. In Chrome's own timing data from our test, Initial connection ran from 0.60 ms to 93.38 ms, and SSL from 2.61 ms to 93.36 ms: SSL sits *inside* it.
+
+<Predict
+  question="The Timing tab shows Initial connection 306 ms and SSL 157 ms. How long did setting up the connection take?"
+  options={["463 ms: add them up", "306 ms", "157 ms", "149 ms"]}
+  answer={1}
+>
+**306 ms.** Initial connection already includes the SSL part, so adding them counts TLS twice. The TCP handshake on its own was 306 − 157 = 149 ms.
+</Predict>
+
+### Stop 5: request sent. Why is this bar almost always tiny?
+
+Everything so far was preparation. Now the request itself goes out: the method, the URL, the <Term id="header">headers</Term>, any cookies and any body. The connection is already open, so this is just writing bytes into it. It's usually well under a millisecond, like the 0.21 ms here.
+
+It only gets long when the body is big, such as a file upload. Then this bar is how long the upload took.
+
+### Stop 6: waiting. Why isn't this the server's time?
+
+This is the bar everyone calls "the server": **Waiting for server response**. Older versions of Chrome labelled it **Waiting (TTFB)**, for <Term id="ttfb">time to first byte</Term>. But look at what it actually measures: from the moment the request is sent until the first byte of the answer arrives. That includes:
+
+- the request travelling *to* the server,
+- any <Term id="cdn">CDN</Term>, load balancer or <Term id="proxy">proxy</Term> it passes on the way,
+- the app doing its work, including any database queries,
+- and the first byte of the answer travelling *back*.
+
+So this bar always contains at least one round trip. Here it was 643 ms with a server about 150 ms away, which means the server itself spent roughly 490 ms. Still the biggest single cost, but a lot less than the total that made people blame it.
+
+### Stop 7: download. Why does size matter even on fast internet?
+
+Finally, the rest of the response streams in. **Content Download** depends on how big the response is, whether it's <Term id="compression">compressed</Term>, and the connection's speed.
+
+There's one more thing that surprises people. A brand-new TCP connection doesn't start at full speed. It starts by sending only about 14 KB, then roughly doubles that with each round trip as it gains confidence that the network can cope. So a large response on a cold connection pays several extra round trips, however fast your internet is. Smaller and compressed responses are faster twice over.
+
+### The same request, a second later
+
+What changes if you send the same request again straight away? The browser keeps the connection open after a response, so the next request to the same server can use it again. This is <Term id="connection-reuse">connection reuse</Term>. Stops 2, 3 and 4 simply don't happen, and their rows vanish from DevTools:
+
+<TimingTab
+  request="GET https://api.example.com/orders"
+  queuedAt={2.11}
+  startedAt={3.04}
+  timings={{ queueing: 0.93, stalled: 0.41, send: 0.18, wait: 640.12, download: 87.36 }}
+  caption="The same request on a connection that's already open: no DNS Lookup, Initial connection or SSL rows. Total: 729 ms."
+/>
+
+Same server, same work, 430 ms faster. That's why the first request to a server is always the slowest one, and why "it's fast when I try it again" is such a common, and misleading, observation.
+
+## What breaks, stop by stop
+
+Each stop fails in its own way, and Chrome tells you which one, if you know where to look.
+
+| Stop | What you see | Usual cause |
+| --- | --- | --- |
+| 1. Queue | A long **Stalled** bar, and no error | Too many requests to one server over HTTP/1.1 |
+| 2. DNS | `net::ERR_NAME_NOT_RESOLVED` | A typo, an expired domain, or a DNS server that isn't answering |
+| 3. TCP | `net::ERR_CONNECTION_REFUSED`, or `net::ERR_CONNECTION_TIMED_OUT` | Nothing listening on that port, or a firewall silently dropping packets |
+| 4. TLS | `net::ERR_CERT_DATE_INVALID`, `ERR_CERT_COMMON_NAME_INVALID`, `ERR_CERT_AUTHORITY_INVALID` | An expired certificate, one for a different name, or one from an issuer the browser doesn't trust |
+| 5. Send | `net::ERR_CONNECTION_RESET` on a big upload | A proxy rejected the body as too large and closed the connection mid-upload |
+| 6. Waiting | A long **Waiting** bar, or a `502` or `504` | Slow code or database, or an app that's down behind a proxy |
+| 7. Download | A long **Content Download**, or `net::ERR_INCOMPLETE_CHUNKED_ENCODING` | A big or uncompressed response, or a connection cut off halfway |
+
+We broke four of the stops on purpose in Chrome 154. For a `fetch()` or an image, this is exactly what the console printed:
+
+<DevTools
+  console={[
+    { level: "error", text: "Failed to load resource: net::ERR_NAME_NOT_RESOLVED" },
+    { level: "error", text: "Failed to load resource: net::ERR_CONNECTION_REFUSED" },
+    { level: "error", text: "Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID" },
+    { level: "error", text: "Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING" },
+  ]}
+/>
+
+When the failing request is the page itself, you get Chrome's error page instead: "This site can't be reached" for DNS and TCP failures, and "Your connection is not private" for certificate problems, each with an error code underneath.
+
+<Callout type="story" title="Refused is fast, timed out is slow. Why?">
+Think of knocking on a door. **Refused** is someone shouting "nobody here" straight away: the server's machine answered at once, saying nothing is listening on that port. It fails within one round trip. **Timed out** is knocking on a door where nobody ever answers: a firewall dropped your packets without a word, so the browser waits and retries before giving up, often for many seconds. Same red error, very different cause.
+</Callout>
+
+Two failures fool almost everyone:
+
+- **The upload that "failed" with a reset.** When a proxy rejects an upload for being too big, it answers `413 Payload Too Large` and closes the connection while the browser is still sending. The browser often never reads that 413. It reports a broken connection instead: in our tests, `net::ERR_CONNECTION_RESET`, and once `net::ERR_CONNECTION_ABORTED`. If big uploads fail and small ones work, check the proxy's size limit before anything else.
+- **Chrome works, but your tools don't.** On some company networks, a firewall inspects HTTPS by replacing each site's certificate with its own. Browsers trust it because IT installed its certificate in the operating system. Many developer tools carry their own list of trusted issuers instead (by default, Git for Windows, Node.js and Python's `requests` all do), so they fail with errors like "self-signed certificate in certificate chain". The TLS stop is working fine; it's just talking to the firewall, not the server.
+
+## Field notes: debugging a slow request
+
+Here's the routine that finds the culprit nearly every time.
+
+<Steps>
+<Step title="Find the longest bar">
+Click the request, open **Timing**, and look for the longest row. That's your stop. Everything else on this page tells you what to do about it.
+</Step>
+<Step title="Check whether the connection was reused">
+Right-click the Network tab's column headers and turn on **Connection ID**. Requests sharing an ID shared a connection. A request with DNS Lookup, Initial connection and SSL rows paid for a new one.
+</Step>
+<Step title="A long Stalled bar? Count the requests">
+Turn on the **Protocol** column. If it says `http/1.1` and dozens of requests go to the same server, they're queueing behind the six-connection limit. HTTP/2, or fewer requests, fixes it.
+</Step>
+<Step title="A long Waiting bar? Make the server explain itself">
+Have the server send a `Server-Timing` header, and Chrome lists its parts in a Server Timing section of the same Timing tab:
+
+```js title="server.js"
+res.setHeader('Server-Timing', 'db;dur=412;desc="orders query", render;dur=61');
+```
+
+Now you can see whether the database or your own code is taking the time.
+</Step>
+<Step title="Measure it without the browser">
+`curl` can print the same breakdown:
+
+```bash
+curl -w "dns:%{time_namelookup} connect:%{time_connect} tls:%{time_appconnect} ttfb:%{time_starttransfer} total:%{time_total}\n" -o /dev/null -s https://example.com
+```
+
+The catch: every number is the time **since the start**, not the length of that step. So for output like `dns:0.118 connect:0.267 tls:0.425 ttfb:1.068 total:1.157`, TCP took 0.267 − 0.118 = 0.149 s and TLS took 0.425 − 0.267 = 0.158 s.
+</Step>
+<Step title="Test a real first visit">
+**Disable cache** in DevTools skips the browser cache, but it does *not* close open connections or forget DNS answers. We checked: with it on, a repeat request still reused its connection. For a true cold start, open `chrome://net-internals/#dns` and press **Clear host cache**, then `chrome://net-internals/#sockets` and press **Flush socket pools**.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"A slow request means a slow server."** Only one bar is the server, and even that one includes the network. Read the bars before you open the backend code. In the example above, more than a third of the time was spent before the request was even sent.
+
+**"HTTPS is slow."** The encryption itself is cheap for modern computers. The cost is the extra round trip to set it up, paid once per connection. Reused connections don't pay it at all, and HTTP/3 goes further by setting up the connection and TLS together in a single round trip.
+
+**"TTFB is how long the server took."** TTFB always includes the trip to the server and back, plus any CDN or proxy in between. A 640 ms TTFB from a server 150 ms away means the server took about 490 ms.
+
+**"Initial connection plus SSL is the connection time."** SSL is already inside Initial connection. Adding them counts TLS twice.
+
+**"Disable cache gives me a first visit."** It skips the cache, nothing more. Your browser still reuses open connections and remembered DNS answers, so your "first visit" is still faster than a real visitor's.
+
+## Summary
+
+<FiveQuestions
+  problem="Every request makes the same seven stops before you see a byte, and any of them can be slow or fail. Chrome gives each stop its own bar, so you can tell exactly where the time went."
+  sees="A slow or failing request. In DevTools → Network → Timing: Queueing, Stalled, DNS Lookup, Initial connection, SSL, Request sent, Waiting for server response and Content Download."
+  underneath="The browser checks its cache and waits for a free connection, looks up the IP address, opens a TCP connection, sets up TLS, sends the request, waits while it travels to the server and back, then downloads the answer. A reused connection skips DNS, TCP and TLS."
+  breaks="`ERR_NAME_NOT_RESOLVED` at DNS, `ERR_CONNECTION_REFUSED` or a timeout at TCP, `ERR_CERT_*` at TLS, a long Waiting bar for a slow server or database, and a long download for big or uncompressed responses."
+  misconception="That a slow request means a slow server, that HTTPS is slow, and that TTFB is server time. The time often goes on DNS, connection setup or response size, and TTFB always includes the trip across the network."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "In Chrome's Timing tab, which bar includes the server actually doing its work?",
+      options: ["DNS Lookup", "Initial connection", "Waiting for server response", "Content Download"],
+      answer: 2,
+      why: "Only the waiting bar includes server work, and even that includes the trip there and back. The others are the browser and the network.",
+    },
+    {
+      q: "You send the same request again, and DNS Lookup, Initial connection and SSL are gone. Why?",
+      options: ["The request failed", "DevTools hides very short bars", "The response came from the cache", "The connection was reused"],
+      answer: 3,
+      why: "The browser kept the connection open, so it didn't need to look up the address, shake hands or set up TLS again.",
+    },
+    {
+      q: "Initial connection shows 306 ms and SSL shows 157 ms. How long did connecting take?",
+      options: ["463 ms", "306 ms", "157 ms", "149 ms"],
+      answer: 1,
+      why: "SSL is drawn inside Initial connection, so the total is 306 ms. Adding them counts TLS twice.",
+    },
+    {
+      q: "`net::ERR_NAME_NOT_RESOLVED` means the request failed at which stop?",
+      options: ["DNS", "TCP", "TLS", "The server"],
+      answer: 0,
+      why: "The name couldn't be turned into an IP address, so no connection was ever opened.",
+    },
+    {
+      q: "Which of these usually shows up the fastest?",
+      options: ["A long Content Download", "`net::ERR_CONNECTION_TIMED_OUT`", "A long Waiting bar", "`net::ERR_CONNECTION_REFUSED`"],
+      answer: 3,
+      why: "A refused connection is an immediate answer: nothing is listening on that port. A timeout means waiting for an answer that never comes.",
+    },
+    {
+      q: "Over HTTP/1.1, the seventh request to the same server shows a long Stalled bar. Why?",
+      options: ["The server is slow", "DNS failed", "Chrome opens at most six connections per server, so it waits for one to free up", "The response is too big"],
+      answer: 2,
+      why: "Six connections per server is HTTP/1.1's limit in Chrome. HTTP/2 sends many requests over one connection and avoids the queue.",
+    },
+    {
+      q: "TTFB is 640 ms, and the round trip to the server is 150 ms. Roughly how long did the server spend?",
+      options: ["640 ms", "790 ms", "490 ms", "150 ms"],
+      answer: 2,
+      why: "TTFB includes one trip there and back. Take that away and about 490 ms is left for the server.",
+    },
+    {
+      q: "curl prints `connect:0.267 tls:0.425`. How long did the TLS handshake take?",
+      options: ["0.425 s", "0.692 s", "0.267 s", "0.158 s"],
+      answer: 3,
+      why: "curl's numbers are times since the start, so each step is the difference: 0.425 − 0.267 = 0.158 s.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="What happens when you type a URL and press Enter?">
+The browser first checks its cache; with no fresh copy, it queues the request until a connection is free. It looks up the server's IP address with DNS, opens a TCP connection (one round trip for the SYN, SYN-ACK, ACK handshake) and, for HTTPS, sets up TLS: it agrees on keys and checks the certificate. Then it sends the HTTP request, waits while it travels through any CDN or proxy to the server and back, and downloads the response. As the HTML arrives, the browser starts building the page, which usually triggers more requests that repeat the same journey, often over the connection that's already open.
+</Question>
+<Question q="A request is slow. How do you find out why?">
+Open the request's Timing tab in DevTools and find the longest bar, because each bar is a different stop with a different fix. Check whether the connection was new or reused (the Connection ID column), whether requests are queueing on HTTP/1.1 (the Protocol column), and for a long Waiting bar, add a `Server-Timing` header to split server time into parts. `curl -w` gives the same breakdown from a terminal, without the browser.
+</Question>
+<Question q="What is TTFB, and why isn't it the server's processing time?">
+Time to first byte runs from sending the request until the first byte of the response arrives. It includes the request's trip to the server, any CDN, load balancer or proxy on the way, the server's work, and the first byte's trip back. So it always includes at least one network round trip; you have to subtract that to estimate the server's own time.
+</Question>
+<Question q="Why is the first request to a server slower than the ones after it?">
+The first request pays for DNS, the TCP handshake and the TLS handshake: several round trips before anything is sent. Browsers keep connections open afterwards (keep-alive, or HTTP/2's single shared connection), so later requests reuse them and skip all three. A brand-new TCP connection also starts slowly and speeds up over the first few round trips.
+</Question>
+<Question q="What does HTTPS cost in performance, and how do you reduce it?">
+Mostly round trips: TLS 1.3 adds one per new connection, and TLS 1.2 added two. The encryption itself is cheap. You reduce the cost by reusing connections, using HTTP/2 or HTTP/3 (HTTP/3 sets up the transport and TLS together in one round trip), staying on TLS 1.3, and putting servers or a CDN closer to users so each round trip is shorter.
+</Question>
+<Question q="What's the difference between ERR_CONNECTION_REFUSED and ERR_CONNECTION_TIMED_OUT?">
+Refused means the server's machine answered and said nothing is listening on that port, usually because the app is down or on another port. It fails fast. Timed out means no answer came at all, usually because a firewall drops the packets or the address is wrong, so the browser waits and retries before giving up.
+</Question>
+<Question q="Why might a request spend a long time in Stalled?">
+Over HTTP/1.1, Chrome allows six connections per server, so extra requests wait for a free one. Lower-priority requests also wait behind more important ones. The fixes are HTTP/2, which carries many requests over one connection, and fewer requests, for example by bundling or removing ones you don't need.
+</Question>
+</Interview>
+
+## What's next
+
+The second stop deserves a closer look. How does a name like `api.example.com` really become an address, why do DNS changes seem to take "48 hours", and what happens when a DNS server gives you the wrong answer? That's the next post this week: **DNS: How a Name Becomes an Address (and When It Lies)**.
+
+Further down this same request, once it reaches the browser's security checks and your server's response headers, two posts are already waiting: [Your Browser Just Blocked Your Request. Why?](/posts/your-browser-blocked-your-request/) and [You Installed Helmet. What Did It Actually Change?](/posts/you-installed-helmet/)
+
+### Sources and further reading
+
+- MDN Web Docs: [An overview of HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview) and [Connection management in HTTP/1.x](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Connection_management_in_HTTP_1.x)
+- MDN Web Docs: [DNS](https://developer.mozilla.org/en-US/docs/Glossary/DNS) and [Time to first byte](https://developer.mozilla.org/en-US/docs/Glossary/Time_to_first_byte)
+- MDN Web Docs: [Server-Timing](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Server-Timing)
+- Chrome DevTools: [Network features reference, timing breakdown](https://developer.chrome.com/docs/devtools/network/reference#timing-explanation)
+- curl: [`--write-out` variables](https://curl.se/docs/manpage.html#-w)
+- RFC 6928: [Increasing TCP's Initial Window](https://www.rfc-editor.org/rfc/rfc6928)

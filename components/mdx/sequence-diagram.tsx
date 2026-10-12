@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { motion, useInView, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 import { Code2, Database, Globe, Network, Pause, Play, RotateCcw, Server, Shield, SkipBack, SkipForward, User, UserX } from "lucide-react";
 import { HttpLines } from "./http-lines";
 import { inline } from "./inline";
@@ -41,8 +41,7 @@ export function SequenceDiagram({ title, actors, steps }: { title?: string; acto
   const [animated, setAnimated] = useState(false);
   const [playing, setPlaying] = useState(false);
   const root = useRef<HTMLDivElement>(null);
-  const inView = useInView(root, { once: true, amount: 0.45 });
-  const reduce = useReducedMotion();
+  // Reader-controlled: nothing moves until the reader presses Play or Next.
   const n = actors.length;
   const col = (id: string) => Math.max(0, actors.findIndex((a) => a.id === id));
   const center = (i: number) => ((i + 0.5) / n) * 100;
@@ -58,14 +57,6 @@ export function SequenceDiagram({ title, actors, steps }: { title?: string; acto
     [last],
   );
 
-  // Autoplay once, the first time the diagram is mostly on screen.
-  useEffect(() => {
-    if (inView && !reduce) {
-      setAnimated(true);
-      setRun((r) => r + 1);
-      setPlaying(true);
-    }
-  }, [inView, reduce]);
 
   useEffect(() => {
     if (!playing) return;
