@@ -36,6 +36,7 @@ export function SiteFooter() {
         <div>
           <h2 className="eyebrow text-subtle">More</h2>
           <ul className="mt-4 space-y-2.5 text-sm">
+            <li><Link href="/case-studies/" className="text-muted hover:text-fg">Case studies</Link></li>
             <li><Link href="/chains/request/" className="text-muted hover:text-fg">Follow One Request</Link></li>
             <li><Link href="/chains/payment/" className="text-muted hover:text-fg">Follow One Payment</Link></li>
             <li><Link href="/tags/" className="text-muted hover:text-fg">All tags</Link></li>
@@ -53,6 +54,7 @@ export function SiteFooter() {
           <a href={`${site.repo}/blob/main/LICENSE`} className="underline underline-offset-2 hover:text-muted">MIT</a>.
           Found a mistake?{" "}
           <a href={`${site.repo}/blob/main/CONTRIBUTING.md`} className="underline underline-offset-2 hover:text-muted">Send a fix</a>.
+          <span className="mt-1 block sm:float-right sm:mt-0">Best on a laptop or desktop (14″ or larger).</span>
         </p>
       </div>
     </footer>

@@ -43,7 +43,10 @@ export const getSeries = (n: number) => series.find((s) => s.n === n);
 export type WeekDay = { day: number; title: string; slug?: string };
 export type Week = { n: number; title: string; blurb: string; days: WeekDay[] };
 
-/** The publishing plan: one week, one theme, one post a day. A day with a slug links to that post once it exists. */
+/**
+ * The publishing plan: one theme a week, posts in reading order. `day` only orders them;
+ * it's never shown (titles stay plain, and readers see "Week 1: <title>" plus what's coming).
+ */
 export const weeks: Week[] = [
   {
     n: 1,
@@ -72,11 +75,13 @@ export function weekPlace(slug: string) {
   return undefined;
 }
 
-/** "Week 1 · Day 5" for a post in the plan, otherwise "Series 2". */
+/** "Week 1: The Request You Never See" for a post in the plan, otherwise "Series 2". */
 export function placeLabel(post: { slug: string; series: number }) {
   const at = weekPlace(post.slug);
-  return at ? `Week ${at.week.n} · Day ${at.day.day}` : `Series ${post.series}`;
+  return at ? weekName(at.week) : `Series ${post.series}`;
 }
+
+export const weekName = (w: Week) => `Week ${w.n}: ${w.title}`;
 
 export type ChainId = "request" | "payment";
 export type ChainStage = { name: string; roadmap: number[]; note: string };

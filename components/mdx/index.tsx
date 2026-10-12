@@ -12,8 +12,8 @@ import { Term } from "./term";
 import { TimingTab } from "./timing";
 import { UrlAnatomy } from "./url-anatomy";
 
-/** Component map for a post. Relative image paths resolve to that post's folder. */
-export function mdxComponents(slug: string): MDXComponents {
+/** Component map for a post or case study. Relative image paths resolve to its own folder. */
+export function mdxComponents(slug: string, section: "posts" | "case-studies" = "posts"): MDXComponents {
   return {
     h2: H2,
     h3: H3,
@@ -22,7 +22,7 @@ export function mdxComponents(slug: string): MDXComponents {
     table: Table,
     img: ({ src = "", alt = "", ...rest }) => (
       <img
-        src={typeof src === "string" && src.startsWith("./") ? withBase(`/posts/${slug}/${src.slice(2)}`) : src}
+        src={typeof src === "string" && src.startsWith("./") ? withBase(`/${section}/${slug}/${src.slice(2)}`) : src}
         alt={alt}
         loading="lazy"
         decoding="async"

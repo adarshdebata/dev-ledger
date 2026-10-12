@@ -31,7 +31,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${mono.variable}`}>
+    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth" className={`${inter.variable} ${mono.variable}`}>
       <body className="flex min-h-dvh flex-col font-sans">
         <Providers>
           <a

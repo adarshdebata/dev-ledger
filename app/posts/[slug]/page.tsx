@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight, ChevronDown, Pencil } from "lucide-react";
+import { AuthorCard, Avatar, PersonName } from "@/components/author";
 import { mdxComponents } from "@/components/mdx";
 import { RevealOnScroll } from "@/components/reveal-on-scroll";
 import { ReadingProgress, Toc } from "@/components/toc";
+import { historyOf } from "@/lib/git-meta";
 import { renderMdx } from "@/lib/mdx";
 import { formatDate, getAllPosts, getPost, postForRoadmapItem } from "@/lib/posts";
-import { absoluteUrl, alternates, getChain, getSeries, roadmap, site, weekPlace } from "@/lib/site";
+import { absoluteUrl, alternates, getChain, getSeries, roadmap, site, weekName, weekPlace } from "@/lib/site";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -58,13 +60,19 @@ export default async function PostPage({ params }: Props) {
   const nextItem = at ? undefined : roadmap.find((r) => r.n === Math.max(...post.roadmap) + 1 && r.series === post.series);
   const nextItemPost = nextItem ? postForRoadmapItem(nextItem.n) : undefined;
 
+  // Who wrote it (frontmatter, else the first commit) and who last changed it (file-level Git history).
+  const history = historyOf(`content/posts/${post.slug}/index.mdx`, post.author);
+  const author = history.author ?? { name: site.author.name };
+  const updated = history.updated && (history.revisions ?? 1) > 1 && history.updated.date > post.date ? history.updated : undefined;
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "TechArticle",
     headline: post.title,
     description: post.summary,
     datePublished: post.date,
-    author: { "@type": "Person", name: site.author.name, url: site.author.github },
+    ...(updated ? { dateModified: updated.date } : {}),
+    author: { "@type": "Person", name: author.name, url: author.author ? `https://github.com/${author.author.github}` : site.author.github },
     image: absoluteUrl(`/posts/${post.slug}/og.png`),
     url: absoluteUrl(`/posts/${post.slug}/`),
     keywords: post.tags.join(", "),
@@ -105,7 +113,10 @@ export default async function PostPage({ params }: Props) {
                   className="animate-fade-up mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 border-y border-line py-3 font-mono text-[12.5px] text-subtle [animation-delay:160ms]"
                   data-pagefind-ignore
                 >
-                  <span className="text-fg">{site.author.name}</span>
+                  <span className="flex items-center gap-2 text-fg">
+                    <Avatar person={author} size={22} />
+                    <PersonName person={author} />
+                  </span>
                   <span aria-hidden="true">·</span>
                   <time dateTime={post.date}>{formatDate(post.date)}</time>
                   <span aria-hidden="true">·</span>
@@ -114,7 +125,7 @@ export default async function PostPage({ params }: Props) {
                     <>
                       <span aria-hidden="true">·</span>
                       <Link href="/#this-week" className="hover:text-fg hover:underline">
-                        Week {at.week.n} · Day {at.day.day}
+                        {weekName(at.week)}
                       </Link>
                     </>
                   )}
@@ -127,6 +138,12 @@ export default async function PostPage({ params }: Props) {
                     </>
                   )}
                 </div>
+                {updated && (
+                  <p className="animate-fade-up mt-2.5 font-mono text-[11.5px] text-subtle [animation-delay:180ms]" data-pagefind-ignore>
+                    Updated <time dateTime={updated.date}>{formatDate(updated.date)}</time> by <PersonName person={updated.by} />
+                    {history.revisions && <> · {history.revisions} revisions</>}
+                  </p>
+                )}
               </header>
 
               {toc.length > 0 && (
@@ -166,10 +183,23 @@ export default async function PostPage({ params }: Props) {
                   </div>
                 )}
 
+                {author.author && <AuthorCard author={author.author} eyebrow="Written by" wide />}
+                {history.contributors.length > 1 && (
+                  <p className="text-[13.5px] text-muted">
+                    <span className="font-semibold text-fg">Contributors to this article: </span>
+                    {history.contributors.map((c, i) => (
+                      <span key={c.name}>
+                        {i > 0 && ", "}
+                        <PersonName person={c} />
+                      </span>
+                    ))}
+                  </p>
+                )}
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   {at?.next && (
                     <NextCard
-                      eyebrow={`Next in Week ${at.week.n} · Day ${at.next.day}`}
+                      eyebrow={`Next in Week ${at.week.n}`}
                       title={at.next.title}
                       href={nextDayPost ? `/posts/${nextDayPost.slug}/` : "/#this-week"}
                       soon={!nextDayPost}

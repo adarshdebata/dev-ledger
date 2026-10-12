@@ -1,0 +1,18 @@
+{
+  "authors": [
+    {
+      "id": "adarshdebata",
+      "name": "Adarsh Kumar Debata",
+      "title": "Backend Developer · Fintech and Digital Payments",
+      "bio": "Backend developer focused on Node.js and event-driven microservices for fintech and digital-payments platforms. Exploring DevOps.",
+      "github": "adarshdebata",
+      "avatar": "/authors/adarshdebata.jpg",
+      "socials": {
+        "linkedin": "adarsh-kumar-debata",
+        "x": "adarsh_debata",
+        "instagram": "adarsh_197"
+      },
+      "gitEmails": ["adarshdebata00@gmail.com"]
+    }
+  ]
+}

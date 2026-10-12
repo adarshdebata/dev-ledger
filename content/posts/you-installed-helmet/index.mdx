@@ -6,6 +6,8 @@ series: 2
 roadmap: [21]
 chain: request
 tags: [security, http, express, helmet, browser]
+author: adarshdebata
+thumb: shield
 summary: "Helmet doesn't scan, filter or block anything on your server. It adds twelve response headers and removes one. Here's what each header asks the browser to do, which ones still matter, and which ones can quietly break your own site."
 ---
 
@@ -423,7 +425,7 @@ Start in report-only mode (`Content-Security-Policy-Report-Only`, or `reportOnly
 
 ## What's next
 
-Every header in this article reached the browser over a connection to a port on your server. But which network address is that port actually listening on? That one detail is why an app that works perfectly on your laptop can be unreachable inside Docker. It's Day 7, the last post this week: **127.0.0.1 vs 0.0.0.0: Why It Works Locally but Not in Docker**.
+Every header in this article reached the browser over a connection to a port on your server. But which network address is that port actually listening on? That one detail is why an app that works perfectly on your laptop can be unreachable inside Docker. It's the last post this week: **127.0.0.1 vs 0.0.0.0: Why It Works Locally but Not in Docker**.
 
 Reverse proxies like Nginx, which can add, change or strip headers like these on the way out, get their own article next week.
 

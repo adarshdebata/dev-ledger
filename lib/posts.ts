@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { getAuthor } from "./authors";
 import { chains, roadmap, site, type ChainId } from "./site";
 
 /** Splits a file into its YAML frontmatter (between the opening `---` lines) and the body after it. */
@@ -42,7 +43,7 @@ function fail(slug: string, msg: string): never {
 }
 
 /** Words of prose only: code, JSX and frontmatter don't count towards reading time. */
-function readingMinutes(source: string) {
+export function readingMinutes(source: string) {
   const prose = source
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/<[^>]+>/g, " ")
@@ -69,6 +70,8 @@ function loadPost(slug: string): Post {
   if (Number.isNaN(date.getTime())) fail(slug, `invalid date "${String(data.date)}"`);
   const thumb = data.thumb === undefined ? undefined : String(data.thumb);
   if (thumb && !THUMBS.includes(thumb as Thumb)) fail(slug, `"thumb" must be one of ${THUMBS.join(", ")}`);
+  const author = data.author === undefined ? undefined : String(data.author);
+  if (author && !getAuthor(author)) fail(slug, `unknown author "${author}" (add them to content/authors.json)`);
 
   return {
     slug,
@@ -81,7 +84,7 @@ function loadPost(slug: string): Post {
     tags,
     summary: String(data.summary),
     cover: data.cover === undefined ? undefined : String(data.cover),
-    author: data.author === undefined ? undefined : String(data.author),
+    author,
     thumb: thumb as Thumb | undefined,
     readingMinutes: readingMinutes(content),
     source: content,

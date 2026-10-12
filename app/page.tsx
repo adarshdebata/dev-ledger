@@ -1,9 +1,14 @@
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, Check } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
+import { Avatar, SocialLinks } from "@/components/author";
 import { HeroWaterfall } from "@/components/hero-waterfall";
+import { Parallax } from "@/components/parallax";
 import { IssueTag, PostCard, PostCover, PostMetaLine, postStage } from "@/components/post-card";
+import { PostThumb, thumbFor } from "@/components/post-thumb";
+import { WeekList } from "@/components/week-list";
 import { WindField } from "@/components/wind-field";
-import { getAllPosts, getPost, postsInSeries, seriesRoadmap } from "@/lib/posts";
+import { authors } from "@/lib/authors";
+import { getAllPosts, postsInSeries, seriesRoadmap } from "@/lib/posts";
 import { chains, currentWeek, external, series, site } from "@/lib/site";
 
 const fiveQuestions = [
@@ -18,14 +23,15 @@ export default function Home() {
   const posts = getAllPosts();
   const [featured, ...rest] = posts;
   const where = featured ? postStage(featured) : undefined;
-  const weekDays = currentWeek.days.map((d) => ({ ...d, post: d.slug ? getPost(d.slug) : undefined }));
-  const published = weekDays.filter((d) => d.post).length;
+  const owner = authors[0];
 
   return (
     <>
-      {/* Hero: big type over a quiet field of moving air */}
+      {/* Hero: big type over a quiet field of moving air that drifts a little slower than the page */}
       <section className="relative isolate overflow-hidden">
-        <WindField className="absolute inset-0 -z-10 size-full" />
+        <Parallax distance={110} className="absolute inset-0 -z-10">
+          <WindField className="size-full" />
+        </Parallax>
         <div className="container-page pt-20 pb-16 sm:pt-28 sm:pb-24">
           <p className="eyebrow animate-fade-up text-accent">{site.theme}</p>
           <h1 className="animate-fade-up mt-6 max-w-4xl text-[3rem] leading-[0.98] font-semibold tracking-[-0.045em] text-balance [animation-delay:60ms] sm:text-[5.25rem]">
@@ -54,6 +60,19 @@ export default function Home() {
               Follow one request
             </Link>
           </div>
+          {owner && (
+            <div className="animate-fade-up mt-10 flex flex-wrap items-center gap-x-3 gap-y-1 [animation-delay:240ms]">
+              <Avatar person={{ name: owner.name, author: owner }} size={30} />
+              <p className="text-[14px] text-muted">
+                Written by{" "}
+                <Link href={`/about/#${owner.id}`} className="font-medium text-fg hover:text-accent">
+                  {owner.name}
+                </Link>
+                {owner.title && <span className="hidden sm:inline"> · {owner.title}</span>}
+              </p>
+              <SocialLinks author={owner} className="-ml-1" />
+            </div>
+          )}
         </div>
       </section>
 
@@ -76,10 +95,13 @@ export default function Home() {
                 </span>
               </div>
               <dl className="space-y-4 border-line text-sm lg:border-l lg:pl-8">
-                <PostCover post={featured} />
+                {featured.cover ? <PostCover post={featured} /> : <PostThumb motif={thumbFor(featured)} />}
                 <div>
                   <dt className="eyebrow text-subtle">Part of</dt>
-                  <dd className="mt-1.5"><IssueTag post={featured} /></dd>
+                  <dd className="mt-1.5 flex flex-col gap-1">
+                    <IssueTag post={featured} />
+                    {currentWeek.days.some((d) => d.slug === featured.slug) && <span className="text-muted">{currentWeek.title}</span>}
+                  </dd>
                 </div>
                 <div>
                   <dt className="eyebrow text-subtle">Published</dt>
@@ -121,30 +143,9 @@ export default function Home() {
               Week {currentWeek.n}: {currentWeek.title}
             </h2>
             <p className="mt-4 max-w-xl text-[16px] leading-relaxed text-muted">
-              {currentWeek.blurb} Start at Day 1 for the full picture, or jump to any day.
+              {currentWeek.blurb} Start at the top for the full picture, or jump to any post.
             </p>
-            <ol className="mt-7 max-w-xl border-t border-line">
-              {weekDays.map((d) => (
-                <li key={d.day} className="border-b border-line">
-                  {d.post ? (
-                    <Link href={`/posts/${d.post.slug}/`} className="group grid grid-cols-[4.5rem_1fr_auto] items-baseline gap-3 py-3.5">
-                      <span className="font-mono text-[12px] text-accent">Day {d.day}</span>
-                      <span className="text-[15.5px] leading-snug font-medium transition-colors group-hover:text-accent">{d.title}</span>
-                      <Check className="size-4 self-center text-ok" aria-label="Published" />
-                    </Link>
-                  ) : (
-                    <div className="grid grid-cols-[4.5rem_1fr_auto] items-baseline gap-3 py-3.5">
-                      <span className="font-mono text-[12px] text-subtle">Day {d.day}</span>
-                      <span className="text-[15.5px] leading-snug text-muted">{d.title}</span>
-                      <span className="font-mono text-[11px] text-subtle">soon</span>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ol>
-            <p className="mt-4 font-mono text-[12px] text-subtle">
-              {published} of {weekDays.length} published
-            </p>
+            <WeekList week={currentWeek} className="mt-7 max-w-xl" />
           </div>
           <HeroWaterfall />
         </div>
@@ -219,10 +220,15 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Elsewhere */}
+      {/* Case studies */}
       <section className="container-page mt-24">
         <div className="border-t border-line pt-10">
-          <SectionLabel>Elsewhere</SectionLabel>
+          <div className="flex items-baseline justify-between gap-4">
+            <SectionLabel>Case studies</SectionLabel>
+            <Link href="/case-studies/" className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline">
+              All case studies <ArrowRight className="size-4" />
+            </Link>
+          </div>
           <a href={external.url} className="group mt-6 flex items-start justify-between gap-6 rounded-2xl border border-line p-6 transition-colors hover:border-line-strong hover:bg-card">
             <span className="min-w-0">
               <span className="block text-xl font-semibold tracking-tight">{external.title}</span>

@@ -111,12 +111,19 @@
   --shadow-lift: var(--shadow-lg);
 
   --animate-fade-up: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-page-in: page-in 0.35s ease-out both;
   --animate-grow-x: grow-x 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: none; }
+}
+
+/* Opacity only: a transform here would briefly re-anchor fixed elements such as the reading bar. */
+@keyframes page-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes grow-x {
@@ -225,6 +232,50 @@ body::before {
 /* The table of contents fades out while a wide figure passes underneath it. */
 [data-toc-panel] { transition: opacity 0.3s, transform 0.3s; }
 html[data-wide-in-view] [data-toc-panel] { opacity: 0; transform: translateX(12px); pointer-events: none; }
+
+/* In-page links glide, and stop clear of the sticky header. Next.js turns smoothing off for route changes. */
+html { scroll-padding-top: 6rem; }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-scroll-behavior="smooth"] { scroll-behavior: smooth; }
+}
+
+/* ---------- Animated thumbnails (components/post-thumb.tsx): still until hovered or focused ---------- */
+
+.thumb svg * { transform-box: fill-box; }
+.thumb-grow { transform-origin: left center; }
+.thumb-pulse { transform-origin: center; }
+
+@media (prefers-reduced-motion: no-preference) {
+  :is(.group:hover, .group:focus-visible, .group:focus-within) .thumb-packet { animation: thumb-travel 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+  :is(.group:hover, .group:focus-visible, .group:focus-within) .thumb-grow { animation: thumb-grow 2.8s cubic-bezier(0.22, 1, 0.36, 1) infinite both; }
+  :is(.group:hover, .group:focus-visible, .group:focus-within) .thumb-flow { animation: thumb-flow 1s linear infinite; }
+  :is(.group:hover, .group:focus-visible, .group:focus-within) .thumb-pulse { animation: thumb-pulse 1.4s ease-in-out infinite; }
+  :is(.group:hover, .group:focus-visible, .group:focus-within) .thumb-slide { animation: thumb-slide 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite both; }
+  :is(.group:hover, .group:focus-visible, .group:focus-within) .thumb-bounce { animation: thumb-bounce 1.6s ease-in-out infinite; }
+}
+
+@keyframes thumb-travel {
+  0% { transform: translateX(0); }
+  80%, 100% { transform: translateX(132px); }
+}
+@keyframes thumb-grow {
+  0% { transform: scaleX(0.08); }
+  45%, 100% { transform: scaleX(1); }
+}
+@keyframes thumb-flow { to { stroke-dashoffset: -16; } }
+@keyframes thumb-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+@keyframes thumb-slide {
+  0% { transform: translateX(-6px); opacity: 0; }
+  30%, 100% { transform: none; opacity: 1; }
+}
+@keyframes thumb-bounce {
+  0%, 100% { transform: translateX(0); }
+  45% { transform: translateX(14px); }
+  55% { transform: translateX(11px); }
+}
 
 /* ---------- Scroll reveals (only once JS has set html.reveal-ready) ---------- */
 

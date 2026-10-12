@@ -58,9 +58,51 @@ roadmap: [9, 10, 11] # roadmap items this article covers
 chain: request       # optional: request | payment
 tags: [cors, http]   # lowercase-kebab-case
 summary: "One or two sentences for cards, RSS and search results."
+author: adarshdebata # optional: an id from content/authors.json
+thumb: origins       # optional card thumbnail: journey | origins | shield
 cover: ./cover.webp  # optional
 ---
 ```
+
+Titles stay plain: no "Day 3" or "Part 2" in them. The order a week is read in
+lives in `weeks` in [`lib/site.ts`](lib/site.ts), and readers see it as a list
+of what's out and what's coming.
+
+## Authors and attribution
+
+Author profiles live in [`content/authors.json`](content/authors.json), so
+adding a contributor never means touching a component:
+
+```json
+{
+  "id": "your-github-username",
+  "name": "Your Name",
+  "title": "What you do",
+  "bio": "One or two sentences.",
+  "github": "your-github-username",
+  "avatar": "/authors/your-github-username.jpg",
+  "socials": { "linkedin": "", "x": "", "instagram": "", "website": "" },
+  "gitEmails": ["the-email-you-commit-with@example.com"]
+}
+```
+
+Only `id`, `name` and `github` are required. Empty social fields are hidden.
+`gitEmails` is used only to match your commits to your profile; it's never
+shown. Put a small square photo in `public/authors/`.
+
+Who wrote and who last updated each article comes from Git, not from guesses:
+[`scripts/git-meta.mjs`](scripts/git-meta.mjs) runs `git log --follow` on every
+article before each build. The original author is the `author` in the
+frontmatter, or whoever first committed the file. The About page's contribution
+numbers come from the same history, leaving out merge commits and the lockfile.
+CI checks out the full history (`fetch-depth: 0`) for this.
+
+## Case studies
+
+Real problems from real projects go in `content/case-studies/<slug>/index.mdx`,
+with `title`, `summary`, `date`, and optionally `author`, `tags` and `thumb`. They
+use the same MDX components as articles. Stories published on their own site are
+listed from [`lib/case-studies.ts`](lib/case-studies.ts).
 
 Components available inside MDX live in [`components/mdx/`](components/mdx):
 `Callout`, `Steps`/`Step`, `CodeTabs`, `Compare`, `DevTools`, `Predict`,

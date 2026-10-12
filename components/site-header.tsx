@@ -13,11 +13,13 @@ const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 const nav = [
   { href: "/", label: "Home" },
-  { href: "/#series", label: "Series" },
-  { href: "/chains/request/", label: "Follow a request" },
-  { href: "/tags/", label: "Tags" },
+  { href: "/series/", label: "Series" },
+  { href: "/case-studies/", label: "Case studies" },
   { href: "/about/", label: "About" },
 ];
+
+/** Search belongs to the reading pages only; Welcome and About stay quiet (no box, no Ctrl+K). */
+const BLOG_PAGES = /^\/(posts|series|tags|case-studies)(\/|$)/;
 
 function GitHubIcon({ className }: { className?: string }) {
   return (
@@ -70,7 +72,7 @@ export function SiteHeader() {
           </nav>
 
           <div className="ml-auto flex items-center gap-1 lg:ml-0 lg:justify-self-end">
-            <Search />
+            {BLOG_PAGES.test(pathname) && <Search />}
             <a href="https://github.com/adarshdebata/dev-ledger" className={`${iconBtn} hidden sm:grid`} aria-label="Source on GitHub">
               <GitHubIcon className="size-[17px]" />
             </a>

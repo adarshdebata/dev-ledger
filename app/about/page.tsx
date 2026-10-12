@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AuthorCard, Avatar } from "@/components/author";
 import { PageHeader } from "@/components/page-header";
+import { authors } from "@/lib/authors";
+import { contributorStats } from "@/lib/git-meta";
 import { alternates, site } from "@/lib/site";
+
+const n = (x: number) => x.toLocaleString("en-GB");
 
 export const metadata: Metadata = {
   title: "About",
@@ -18,6 +23,7 @@ const questions = [
 ];
 
 export default function AboutPage() {
+  const stats = contributorStats();
   return (
     <>
       <PageHeader eyebrow="About" title="A running record of backend engineering">
@@ -63,13 +69,7 @@ export default function AboutPage() {
           </p>
         </div>
         <aside className="space-y-4 lg:sticky lg:top-28 lg:self-start">
-          <a
-            href={site.author.github}
-            className="block rounded-2xl border border-line p-5 transition-colors hover:border-line-strong hover:bg-card"
-          >
-            <p className="eyebrow text-subtle">GitHub</p>
-            <p className="mt-1 font-semibold">@adarshdebata →</p>
-          </a>
+          {authors.length === 1 && <AuthorCard author={authors[0]} eyebrow="Author" />}
           <Link
             href="/chains/request/"
             className="block rounded-2xl border border-line p-5 transition-colors hover:border-line-strong hover:bg-card"
@@ -79,6 +79,61 @@ export default function AboutPage() {
           </Link>
         </aside>
       </div>
+
+      {authors.length > 1 && (
+        <section className="container-page pb-4" aria-labelledby="authors">
+          <h2 id="authors" className="text-2xl font-semibold tracking-tight">
+            Authors
+          </h2>
+          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {authors.map((a) => (
+              <AuthorCard key={a.id} author={a} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {stats.length > 0 && (
+        <section className="container-page pt-8 pb-4" aria-labelledby="contributions">
+          <div className="border-t border-line pt-10">
+            <h2 id="contributions" className="text-2xl font-semibold tracking-tight">
+              Contributions
+            </h2>
+            <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted">
+              Counted from the Git history every time the site is built. <strong className="text-fg">Articles</strong> are the
+              ones a person first wrote. <strong className="text-fg">Commits</strong> and{" "}
+              <strong className="text-fg">lines changed</strong> cover the whole project, leaving out merge commits and the
+              lockfile. Lines changed show how much work went in, not how valuable it was, so treat them as a rough guide.
+            </p>
+            <ul className={`mt-6 grid grid-cols-1 gap-4 ${stats.length > 1 ? "md:grid-cols-2 lg:grid-cols-3" : "max-w-2xl"}`}>
+              {stats.map((c) => (
+                <li key={c.name} className="flex items-center gap-4 rounded-2xl border border-line bg-card p-5">
+                  <Avatar person={c} size={44} />
+                  <div className="min-w-0">
+                    <p className="font-semibold">{c.name}</p>
+                    <dl className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[12.5px] text-muted">
+                      <div className="flex gap-1.5">
+                        <dt>Articles</dt>
+                        <dd className="font-semibold text-fg">{n(c.articles)}</dd>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <dt>Commits</dt>
+                        <dd className="font-semibold text-fg">{n(c.commits)}</dd>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <dt>Lines changed</dt>
+                        <dd className="font-semibold text-fg">
+                          <span className="text-ok">+{n(c.added)}</span> <span className="text-bad">−{n(c.removed)}</span>
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
     </>
   );
 }

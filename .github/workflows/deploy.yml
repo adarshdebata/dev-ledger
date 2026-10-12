@@ -18,6 +18,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history: article bylines and contribution counts come from git log.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
 

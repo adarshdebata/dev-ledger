@@ -5,6 +5,8 @@ node_modules/
 .next/
 out/
 public/posts/
+public/case-studies/
+.generated/
 next-env.d.ts
 *.tsbuildinfo
 
