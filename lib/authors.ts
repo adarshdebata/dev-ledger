@@ -18,6 +18,8 @@ export type Author = {
   name: string;
   title?: string;
   bio?: string;
+  /** An optional light line for the profile card. */
+  note?: string;
   github: string;
   avatar?: string;
   socials: Partial<Record<SocialKind, string>>;
@@ -45,6 +47,7 @@ function load(): Author[] {
       name: String(a.name),
       title: typeof a.title === "string" && a.title ? a.title : undefined,
       bio: typeof a.bio === "string" && a.bio ? a.bio : undefined,
+      note: typeof a.note === "string" && a.note ? a.note : undefined,
       github: String(a.github),
       avatar: typeof a.avatar === "string" && a.avatar ? a.avatar : undefined,
       socials,

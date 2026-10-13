@@ -133,6 +133,7 @@ export function DevCard({ author, stats, status }: { author: Author; stats?: Sta
         <div className="border-y border-line py-5 font-mono text-[14px] leading-relaxed text-muted">
           {author.title && <p className="font-semibold text-fg">{author.title}</p>}
           {author.bio && <p className="mt-2">{author.bio}</p>}
+          {author.note && <p className="mt-3 font-sans text-[14.5px] text-accent italic">{author.note}</p>}
         </div>
       </div>
 

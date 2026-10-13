@@ -4,7 +4,8 @@
       "id": "adarshdebata",
       "name": "Adarsh Kumar Debata",
       "title": "Backend Developer · Fintech and Digital Payments",
-      "bio": "Backend developer focused on Node.js and event-driven microservices for fintech and digital-payments platforms. Exploring DevOps.",
+      "bio": "Backend developer working with Node.js and event-driven microservices in fintech and digital payments. Payments teach you quickly that retries, timeouts and duplicates are real problems, not theory.",
+      "note": "Breaks things on purpose so the diagrams can stay honest.",
       "github": "adarshdebata",
       "avatar": "/authors/adarshdebata.jpg",
       "socials": {
