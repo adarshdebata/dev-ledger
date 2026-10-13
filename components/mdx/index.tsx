@@ -2,6 +2,7 @@ import type { MDXComponents } from "mdx/types";
 import { withBase } from "@/lib/site";
 import { Callout, CodeBlock, Compare, DevTools, FiveQuestions, H2, H3, SmartLink, Step, Steps, Table } from "./basics";
 import { CodeTabs, Predict } from "./client-bits";
+import { DnsLookup } from "./dns";
 import { Interview, Question } from "./interview";
 import { RequestJourney } from "./journey";
 import { CorsPlayground, HelmetLab } from "./lazy";
@@ -45,6 +46,7 @@ export function mdxComponents(slug: string, section: "posts" | "case-studies" = 
     CorsPlayground,
     HelmetLab,
     RequestJourney,
+    DnsLookup,
     TimingTab,
     Quiz,
     Interview,

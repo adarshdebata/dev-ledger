@@ -1,0 +1,288 @@
+---
+title: "DNS: How a Name Becomes an Address (and When It Lies)"
+subtitle: "Every request starts with a question you never see. Here's who answers it, why the answer can be old, and what to do when it's wrong."
+date: 2026-10-13
+series: 1
+roadmap: [15, 16]
+tags: [dns, browser, devtools, debugging]
+author: adarshdebata
+thumb: lookup
+summary: "Before your browser can connect to anything, it has to turn a name into an address. That answer is copied and cached at every step, which makes it fast, and sometimes wrong. Here's how a lookup really works, why changes seem to take 48 hours, and how to find out which answer you're actually getting."
+---
+
+**You use it every day. But do you actually know what happens underneath?** In the [last post](/posts/one-request-seven-stops/), one bar in Chrome's Timing tab was called **DNS Lookup**. It took 118 ms, and it happened before the browser could even open a connection.
+
+This post opens that bar up. Who answers the question "where is `api.example.com`?", why does the answer get copied everywhere, and what happens when one of those copies is wrong?
+
+## What you see
+
+You almost never see DNS when it works. You see it when it doesn't, and it rarely says its own name:
+
+- A site opens on your phone's mobile data, but not on your Wi-Fi.
+- You moved a site to a new server. Some people see the new one, some still see the old one, hours later.
+- Chrome says **This site can't be reached**, and the console says:
+
+<DevTools console={[{ level: "error", text: "Failed to load resource: net::ERR_NAME_NOT_RESOLVED" }]} />
+
+All three are DNS. Before reading on, try this one:
+
+<Predict
+  question="You point your site's name at a new server. One friend sees the new site at once; another still gets the old one an hour later. Why?"
+  options={[
+    "DNS takes time to send changes to every server in the world",
+    "The second friend's computer or resolver still has a saved copy of the old answer",
+    "The old server is still switched on",
+    "Their browser ignores DNS",
+  ]}
+  answer={1}
+>
+Nothing gets "sent" anywhere. Answers are **copied and cached** along the way, and each copy is kept until its timer runs out. Your second friend is reading an old copy. The rest of this post is about who keeps those copies, and for how long.
+</Predict>
+
+## What's underneath
+
+### Why can't the browser just use the name?
+
+Because the internet doesn't deliver to names. It delivers to addresses. `api.example.com` is for people; the network needs an <Term id="ip-address">IP address</Term> like `203.0.113.10`. <Term id="dns">DNS</Term> is the system that turns one into the other, and it does it before every new connection.
+
+### Follow one lookup
+
+Here's a single lookup, one hop at a time. Start with **Nothing cached** and press **Next**. Then try the other scenarios and watch whole parts of the trip disappear.
+
+<DnsLookup />
+
+### Who answers, in order
+
+1. **The browser** checks its own small cache first.
+2. **Your computer** checks its cache, and before that, a file called the <Term id="hosts-file">hosts file</Term>. A line in that file beats everything else.
+3. **The resolver** does the real work. It's usually run by your internet provider, unless you've chosen a public one such as `8.8.8.8` (Google) or `1.1.1.1` (Cloudflare). It also keeps the biggest cache, shared by everyone who uses it.
+4. If the resolver has no copy, it walks down from the top: a <Term id="root-server">root server</Term> says who handles `.com`, a <Term id="tld">.com server</Term> says who handles `example.com`, and finally the <Term id="authoritative-server">authoritative name server</Term> gives the real answer.
+
+There are 13 root server names, `a.root-servers.net` to `m.root-servers.net`, and each one is really many machines spread around the world. But here's the surprising part: **your resolver almost never asks them.** We asked a root server directly: its answer about who handles `.com` came with a timer of 172,800 seconds. That's **48 hours**. Once a resolver has that answer, it doesn't need the root again for two days.
+
+### Why it's fast: every step keeps a copy
+
+Every answer comes with a <Term id="ttl">TTL</Term>, a "time to live" in seconds. It tells everyone along the way: *you may keep this copy for this long before asking again.* When we looked up `example.com`, its addresses came with a TTL of 300, so five minutes.
+
+That's why the trip in the animation is usually short. Someone using your resolver probably asked for a popular name a minute ago, so the resolver answers from its copy in one round trip. If you asked yourself a few seconds ago, your own computer answers in about a millisecond, and DevTools shows a tiny DNS bar, or none at all.
+
+<Callout type="insight" title="The TTL that jumps around">
+You might expect to watch the TTL count down neatly: 300, then 295, then 290. We asked `1.1.1.1` for `example.com` three times in nine seconds and got **300, 231 and 36**. Big public resolvers are many machines behind one address, and each one keeps its own copy with its own countdown. The TTL you get back is just how long *that* machine's copy has left.
+</Callout>
+
+### What a DNS answer actually contains
+
+A name usually has a few kinds of record:
+
+- An <Term id="a-record">A record</Term> gives an IPv4 address, and an **AAAA** record an IPv6 address.
+- A <Term id="cname">CNAME</Term> says "this name is really that other name", so the resolver goes on to look that one up.
+- **NS** records say which servers are authoritative for a domain. These are the ones the root and `.com` hand out.
+
+And one name can have **several addresses**. When we asked for `example.com`, we got two IPv4 addresses and one IPv6 address back. Browsers can try another address if one doesn't answer.
+
+### "No" is cached too
+
+When a name doesn't exist, the answer is <Term id="nxdomain">NXDOMAIN</Term>: no such name. That answer gets cached as well, which surprises people. We asked for a made-up name under `example.com`, and the "no" came with instructions to remember it for up to **1,800 seconds**, half an hour.
+
+<Predict
+  question="You create a brand-new subdomain, test.example.com. A teammate who tried it a minute before you created it still gets 'doesn't exist'. Why?"
+  options={[
+    "The new record is broken",
+    "Their resolver remembered the earlier 'no such name' answer, and is still holding it",
+    "New subdomains take 48 hours to work",
+    "Their browser blocked it",
+  ]}
+  answer={1}
+>
+Their resolver cached the **"no"** from a minute ago, and keeps it until it expires, up to the time the domain sets for negative answers. Ask a different resolver, or wait, and the new record appears.
+</Predict>
+
+## What breaks
+
+| What you see | Usual cause | How to check |
+| --- | --- | --- |
+| `net::ERR_NAME_NOT_RESOLVED` | A typo, an expired domain, or a record that doesn't exist yet | `nslookup` the name with a trailing dot (see the field notes) |
+| Works on one network but not another | The two resolvers give different answers | Ask both resolvers the same question |
+| Some people still see the old server after a move | Caches still hold the old answer until its TTL runs out | Read the TTL; lower it before the next move |
+| A name only works on the office network or a VPN | The internal resolver knows names the public internet doesn't | Ask the internal and a public resolver |
+| Only your computer sees a strange address | A forgotten line in your hosts file | Open the hosts file |
+| A long **DNS Lookup** bar | A slow or distant resolver, or a name nobody nearby has asked for | Compare with a different resolver |
+| `nslookup` says one thing, the browser another | The search-suffix trap, or a cached copy in one of them | Add a trailing dot; clear the browser's cache |
+
+<Callout type="story" title="It happened to me">
+A short link wouldn't open for me. The name was resolving fine, but my internet provider's DNS was handing out an address that was dead for that link shortener's domain. Asking Google's public resolver, `8.8.8.8`, directly gave a different address, one that worked. Nothing was wrong with the link, the browser or my computer. One resolver's answer was simply wrong.
+</Callout>
+
+That's the **A resolver that lies** scenario in the animation. Resolvers can be wrong by accident, like that one, and some are wrong on purpose: certain networks answer for names that don't exist, sending you to a search page or a "blocked" page instead of an error. Either way the lesson is the same. **When something works on one network and not another, compare what each resolver says before you blame anything else.**
+
+## Field notes: debugging DNS
+
+<Steps>
+<Step title="Ask the question yourself, with a trailing dot">
+`nslookup` is on every computer. But on Windows it has a trap: it adds your computer's <Term id="search-suffix">DNS search suffix</Term> to the name first. We hit this ourselves on a laptop with a company suffix: `nslookup example.com` returned the address of `example.com.<company-suffix>`, a completely different machine. Here's the shape of it, with the names changed:
+
+```text title="Without the dot (illustrative, names changed)"
+> nslookup example.com 8.8.8.8
+Non-authoritative answer:
+Name:    example.com.corp.example
+Address:  198.51.100.80
+```
+
+A trailing dot means "this name is complete, don't add anything":
+
+```text title="With the dot (real output)"
+> nslookup example.com. 8.8.8.8
+Server:  dns.google
+Address:  8.8.8.8
+
+Non-authoritative answer:
+Name:    example.com
+Addresses:  2606:4700:9a65:72db:f2ef:0:ef6b:ff98
+          172.66.147.243
+          104.20.23.154
+```
+</Step>
+<Step title="Ask a second resolver, and compare">
+Name the resolver at the end: `nslookup api.example.com. 8.8.8.8`, then `nslookup api.example.com. 1.1.1.1`. If your own resolver's answer differs from both, you've found your problem.
+</Step>
+<Step title="Read the TTL">
+On Windows, PowerShell shows it directly:
+
+```text title="Resolve-DnsName example.com -Type A (real output)"
+Name        Type TTL IPAddress
+----        ---- --- ---------
+example.com    A 300 104.20.23.154
+example.com    A 300 172.66.147.243
+```
+
+On macOS and Linux, `dig api.example.com` shows the TTL as the second column of the answer. `ipconfig /displaydns` lists what Windows itself has cached, each entry with its own **Time To Live**.
+</Step>
+<Step title="Check the hosts file">
+Windows: `C:\Windows\System32\drivers\etc\hosts`. macOS and Linux: `/etc/hosts`. An old line there wins against every DNS server in the world, and only on your machine.
+</Step>
+<Step title="Clear the cache that matters">
+- **Chrome:** open `chrome://net-internals/#dns` and press **Clear host cache**.
+- **Windows:** `ipconfig /flushdns`.
+- **macOS:** `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`.
+
+None of these clear your resolver's copy. For that, you wait for the TTL to run out, or ask a different resolver.
+</Step>
+<Step title="Moving a site? Lower the TTL first">
+If the record's TTL is a day, caches may hold the old address for a day after you change it. So lower the TTL to a few minutes **a day or more before** the move, wait for the old TTL to pass, then switch. Afterwards, raise it again.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"DNS changes take 48 hours to propagate."** Nothing propagates. Old copies simply expire. The famous 48 hours is the TTL on the name-server records the root and `.com` hand out, so it matters when you move a domain to *different name servers*. Changing an address at your current DNS provider only waits for that record's own TTL, often a few minutes.
+
+**"Flushing my DNS fixes it for everyone."** It clears only your own computer's copy. Your resolver, and everyone else's, keep theirs until the TTL runs out.
+
+**"A name has one address."** Popular names often have several, for both IPv4 and IPv6. `example.com` had three when we asked.
+
+**"TTL is how long a change takes."** It's how long one copy may be kept. A cache that refreshed just before your change keeps the old answer for the whole TTL; one that refreshes just after picks up the new answer at once.
+
+**"`nslookup` shows exactly what the browser sees."** Not quite. The browser has its own cache, and `nslookup` can add a search suffix the browser doesn't. Use a trailing dot, and clear the browser's cache when you compare.
+
+## Summary
+
+<FiveQuestions
+  problem="Networks deliver to addresses, not names. DNS turns a name like api.example.com into an address, and copies the answer everywhere along the way so the next lookup is fast."
+  sees="Usually nothing. When it goes wrong: `net::ERR_NAME_NOT_RESOLVED`, a site that works on one network but not another, old servers that keep answering after a move, or a long DNS Lookup bar in DevTools."
+  underneath="The browser, then your computer (cache and hosts file), then your resolver. Only when nobody has a copy does the resolver walk from a root server to the .com servers to the domain's authoritative server. Every answer carries a TTL that says how long it may be cached."
+  breaks="Missing names, stale copies after a move, resolvers that give different or wrong answers, internal names that only work on a VPN, stray hosts-file lines, and cached 'no such name' answers."
+  misconception="That changes 'propagate' for 48 hours, that flushing your own cache fixes everyone, that a name has one address, and that nslookup always matches the browser."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "Which server knows the real address of `api.example.com`?",
+      options: ["A root server", "A .com server", "example.com's authoritative name server", "Your browser"],
+      answer: 2,
+      why: "Only the authoritative server holds the real records. Every other answer is a copy, or a pointer to the next server to ask.",
+    },
+    {
+      q: "What does a root server say when asked for `api.example.com`?",
+      options: ["Its IP address", "Which servers handle .com", "Nothing: it forwards the question", "A list of every .com website"],
+      answer: 1,
+      why: "Root servers only know who handles each top-level domain. That answer can be cached for 48 hours, so resolvers rarely need to ask again.",
+    },
+    {
+      q: "A record comes back with a TTL of 300. What does that mean?",
+      options: ["The lookup took 300 ms", "A cache may keep this answer for up to 300 seconds", "The record changes every 5 minutes", "The domain expires in 300 days"],
+      answer: 1,
+      why: "TTL is how long a copy may be kept before it must be asked for again: 300 seconds here.",
+    },
+    {
+      q: "Where does the famous \"48 hours\" for DNS changes come from?",
+      options: ["Name-server records from the root and .com may be cached for 172,800 seconds", "DNS servers sync with each other once a day", "Internet providers batch their updates", "Browsers cache names for two days"],
+      answer: 0,
+      why: "172,800 seconds is 48 hours. It matters when you move a domain to different name servers, not for everyday record changes.",
+    },
+    {
+      q: "You run `ipconfig /flushdns`. Who gets the new answer now?",
+      options: ["Everyone on the internet", "Everyone using your internet provider", "Only your computer, and only once your resolver has the new answer too", "Everyone using 8.8.8.8"],
+      answer: 2,
+      why: "Flushing clears only your own machine's cache. Your resolver keeps its copy until the TTL runs out.",
+    },
+    {
+      q: "`nslookup example.com` returns an address you've never seen; `nslookup example.com.` returns the right one. Why?",
+      options: ["The first lookup timed out", "DNS is broken on your machine", "The site has just moved", "Without the dot, Windows' nslookup added your DNS search suffix to the name"],
+      answer: 3,
+      why: "The trailing dot marks the name as complete, so nothing gets added to it. Without it, you can end up asking about a different name.",
+    },
+    {
+      q: "A site works on your phone's mobile data but not on your Wi-Fi. What should you check first?",
+      options: ["What each network's resolver answers for that name", "Your browser's cookies", "The server's TLS certificate", "Whether the server is overloaded"],
+      answer: 0,
+      why: "Two networks usually mean two resolvers. If they give different answers, DNS is your problem.",
+    },
+    {
+      q: "You create a new subdomain. A teammate who tried it a minute earlier still gets \"doesn't exist\". Why?",
+      options: ["Their resolver cached the earlier \"no such name\" answer", "New subdomains always take 48 hours", "Their hosts file blocks it", "The record needs a restart"],
+      answer: 0,
+      why: "Negative answers are cached too, for a time the domain sets. Asking a different resolver, or waiting, shows the new record.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="What happens when you look up a domain name?">
+The browser checks its own cache, then the operating system checks its cache and the hosts file. If nobody has a copy, the question goes to a recursive resolver, usually the internet provider's or a public one like 8.8.8.8. If the resolver has no copy either, it asks a root server, which points to the TLD servers (such as .com); they point to the domain's authoritative name server, which gives the real answer. Every answer comes with a TTL, and every step caches it on the way back, which is why most lookups are a single short round trip, or none at all.
+</Question>
+<Question q="What is a TTL, and how would you plan a DNS change for a server migration?">
+The TTL is how many seconds any cache may keep an answer. Before a migration, lower the record's TTL to a few minutes, and do it at least one old-TTL ahead, so every cache has picked up the short TTL by the time you switch. Then change the record: caches move over within minutes. Keep the old server running for a while for anyone still on an old copy, then raise the TTL again.
+</Question>
+<Question q="Why do DNS changes seem to take up to 48 hours?">
+Nothing propagates; cached copies expire. The 48 hours comes from the TTL of 172,800 seconds on the name-server records that the root and TLD servers hand out. That matters when you change which name servers a domain uses. A plain address change only waits for that record's own TTL, which is often minutes.
+</Question>
+<Question q="What's the difference between a recursive resolver and an authoritative name server?">
+An authoritative name server holds a domain's real records and answers only for its own domains. A recursive resolver answers anyone's question about any name: it finds the answer by asking authoritative servers, then caches it for everyone who uses it. Your computer talks to a resolver; the resolver talks to authoritative servers.
+</Question>
+<Question q="A site works for you but not for a colleague on another network. How do you debug it?">
+Compare the answers each of you gets: run nslookup with the name and a trailing dot, then against public resolvers such as 8.8.8.8 and 1.1.1.1. Differences point to a stale or wrong copy in one resolver, or split DNS (an internal resolver that knows different names). Check the TTL, the hosts file on the failing machine, and VPN or office DNS settings. Then confirm in DevTools whether the browser even got an address.
+</Question>
+<Question q="What's the difference between an A record and a CNAME?">
+An A record maps a name straight to an IPv4 address (AAAA for IPv6). A CNAME says the name is an alias for another name, so the resolver looks that one up next, which adds a step. A CNAME can't share a name with other records, which is why you usually can't put one on the bare domain itself (example.com), only on names like www.example.com.
+</Question>
+<Question q="What is negative caching, and how can it bite you?">
+When a name doesn't exist, resolvers cache that "no" for a time the domain sets in its SOA record. If anyone looked up a name just before you created it, their resolver keeps answering "doesn't exist" until that time passes. Testing a new record by asking a different resolver, or a fresh name, avoids the confusion.
+</Question>
+</Interview>
+
+## What's next
+
+The browser has its address now. Next it has to reach the machine behind it: a TCP handshake, then for HTTPS a TLS handshake, before a single byte of your request moves. That's the next post this week: **TCP & TLS: The Handshakes Before Your First Byte**.
+
+### Sources and further reading
+
+- MDN Web Docs: [DNS](https://developer.mozilla.org/en-US/docs/Glossary/DNS)
+- RFC 1034: [Domain names, concepts and facilities](https://www.rfc-editor.org/rfc/rfc1034), and RFC 1035: [implementation and specification](https://www.rfc-editor.org/rfc/rfc1035)
+- RFC 2308: [Negative caching of DNS queries](https://www.rfc-editor.org/rfc/rfc2308)
+- [root-servers.org](https://root-servers.org/): the 13 root server names and where they run
+- Microsoft Learn: [nslookup](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/nslookup) and [Resolve-DnsName](https://learn.microsoft.com/en-us/powershell/module/dnsclient/resolve-dnsname)

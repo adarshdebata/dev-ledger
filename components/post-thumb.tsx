@@ -8,6 +8,7 @@ export type Motif = Thumb | "deps";
 
 export function thumbFor(post: Pick<PostMeta, "thumb" | "tags">): Motif {
   if (post.thumb) return post.thumb;
+  if (post.tags.includes("dns")) return "lookup";
   if (post.tags.includes("cors")) return "origins";
   if (post.tags.includes("security")) return "shield";
   return "journey";
@@ -77,6 +78,26 @@ const MOTIFS: Record<Motif, React.ReactNode> = {
         <path d="M29 45l5 5-5 5" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" className="stroke-accent-soft" />
       </g>
       <path d="M120 44l6 6 12-12" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" className="stroke-ok" />
+    </>
+  ),
+  // A name goes out through three servers and comes back as an address.
+  lookup: (
+    <>
+      <rect x="8" y="24" width="42" height="14" rx="7" strokeWidth="1.5" className="fill-card stroke-line-strong" />
+      <rect x="15" y="29.5" width="28" height="3" rx="1.5" className="fill-line-strong" />
+      <path d="M50 31 H62" strokeWidth="1.5" strokeDasharray="3 3" className="thumb-flow stroke-accent-soft" />
+      {[78, 104, 130].map((cx, i) => (
+        <g key={cx}>
+          <circle cx={cx} cy="31" r="9" strokeWidth="1.5" className={`fill-card ${i === 2 ? "stroke-accent-soft" : "stroke-teal-soft"}`} />
+          <circle cx={cx} cy="31" r="2.5" className={i === 2 ? "fill-accent-soft" : "fill-teal-soft"} />
+        </g>
+      ))}
+      <path d="M87 31 H95 M113 31 H121" strokeWidth="1.5" strokeDasharray="3 3" className="thumb-flow stroke-teal-soft" />
+      <path d="M130 40 V52 Q130 60 122 60 H58" strokeWidth="1.5" fill="none" strokeDasharray="3 3" className="thumb-flow stroke-ok" />
+      <rect x="10" y="52" width="48" height="16" rx="8" strokeWidth="1.5" className="thumb-pulse fill-ok/15 stroke-ok" />
+      <rect x="18" y="58.5" width="32" height="3" rx="1.5" className="fill-ok" />
+      <rect x="8" y="78" width="64" height="5" rx="2.5" className="fill-line-strong" />
+      <rect x="8" y="88" width="44" height="5" rx="2.5" className="fill-line" />
     </>
   ),
   // A project, its packages, and the one shared store they all link into.

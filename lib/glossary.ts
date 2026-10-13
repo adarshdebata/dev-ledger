@@ -207,6 +207,42 @@ export const glossary = {
     term: "Compression",
     def: "Shrinking a response before it's sent, usually with gzip or Brotli. Text such as JSON and HTML often gets 70–90% smaller.",
   },
+  ttl: {
+    term: "TTL",
+    def: "Time to live: how many seconds a DNS answer may be kept in a cache before it has to be asked for again.",
+  },
+  nxdomain: {
+    term: "NXDOMAIN",
+    def: "The DNS answer for “this name doesn't exist”. Caches remember that “no” too, for a time the domain sets.",
+  },
+  "authoritative-server": {
+    term: "Authoritative name server",
+    def: "The server that holds a domain's real records, set up by whoever runs the domain. Every other answer you get is a copy.",
+  },
+  "root-server": {
+    term: "Root server",
+    def: "The top of DNS. Root servers don't know any website's address; they only say which servers handle .com, .org, .in and the rest.",
+  },
+  tld: {
+    term: "TLD",
+    def: "Top-level domain: the last part of a name, like .com, .org or .in. Each one has its own set of servers.",
+  },
+  "hosts-file": {
+    term: "Hosts file",
+    def: "A small text file on your computer that maps names to addresses. It's checked before DNS, so a stale line in it overrides everything.",
+  },
+  "a-record": {
+    term: "A record",
+    def: "A DNS record that maps a name to an IPv4 address. An AAAA record does the same for an IPv6 address.",
+  },
+  cname: {
+    term: "CNAME",
+    def: "A DNS record that says “this name is really that other name”, so the resolver goes on to look up the other one.",
+  },
+  "search-suffix": {
+    term: "DNS search suffix",
+    def: "A domain your computer adds to names, so typing “wiki” can mean wiki.corp.example. Windows' nslookup adds it even to names that already have dots.",
+  },
 } as const;
 
 export type GlossaryId = keyof typeof glossary;

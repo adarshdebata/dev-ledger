@@ -71,6 +71,11 @@ const Journey = dynamic(() => import("./request-journey"), {
   loading: () => <Placeholder label="request journey" className="h-[38rem]" />,
 });
 
+const Dns = dynamic(() => import("./dns-lookup"), {
+  ssr: false,
+  loading: () => <Placeholder label="DNS lookup" className="h-[34rem]" />,
+});
+
 export function CorsPlayground() {
   return (
     <WhenNear label="CORS playground">
@@ -83,6 +88,15 @@ export function HelmetLab() {
   return (
     <WhenNear label="Helmet lab">
       <Lab />
+    </WhenNear>
+  );
+}
+
+/** Only for screens wide enough for it, and only when motion is welcome. */
+export function DnsPlayer() {
+  return (
+    <WhenNear label="DNS lookup" className="h-[34rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
+      <Dns />
     </WhenNear>
   );
 }
