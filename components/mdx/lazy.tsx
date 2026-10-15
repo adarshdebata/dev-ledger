@@ -76,6 +76,11 @@ const Dns = dynamic(() => import("./dns-lookup"), {
   loading: () => <Placeholder label="DNS lookup" className="h-[34rem]" />,
 });
 
+const Ids = dynamic(() => import("./id-machine"), {
+  ssr: false,
+  loading: () => <Placeholder label="ID player" className="h-[40rem]" />,
+});
+
 export function CorsPlayground() {
   return (
     <WhenNear label="CORS playground">
@@ -97,6 +102,15 @@ export function DnsPlayer() {
   return (
     <WhenNear label="DNS lookup" className="h-[34rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
       <Dns />
+    </WhenNear>
+  );
+}
+
+/** Only for screens wide enough for it, and only when motion is welcome. */
+export function IdMachinePlayer() {
+  return (
+    <WhenNear label="ID player" className="h-[40rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
+      <Ids />
     </WhenNear>
   );
 }

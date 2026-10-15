@@ -9,6 +9,7 @@ import { CorsPlayground, HelmetLab } from "./lazy";
 import { Quiz } from "./quiz";
 import { OriginCompare } from "./origin-compare";
 import { SequenceDiagram } from "./sequence-diagram";
+import { BitLayout, FirstDigitTimeline, FixFlow, FutureSweep, IdMachine, RoundingRows } from "./snowflake";
 import { Term } from "./term";
 import { TimingTab } from "./timing";
 import { UrlAnatomy } from "./url-anatomy";
@@ -48,6 +49,12 @@ export function mdxComponents(slug: string, section: "posts" | "case-studies" = 
     RequestJourney,
     DnsLookup,
     TimingTab,
+    IdMachine,
+    BitLayout,
+    FirstDigitTimeline,
+    RoundingRows,
+    FixFlow,
+    FutureSweep,
     Quiz,
     Interview,
     Question,
