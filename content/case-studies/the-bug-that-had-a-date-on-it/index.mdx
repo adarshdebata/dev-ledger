@@ -1,0 +1,401 @@
+---
+title: "The Bug That Had a Date on It"
+summary: "Our transaction IDs were built the way many systems build them, and the code looked correct. Then we asked one question: what will an ID look like in a few years? Here's how a time-based ID drifts toward the limits of a JavaScript number, how we found the dates it would break, and how we fixed it before either arrived, without changing a single ID issued today."
+date: 2026-10-15
+author: adarshdebata
+tags: [javascript, ids, testing, debugging]
+thumb: ids
+---
+
+Nothing was broken. No alert, no failing test, no angry customer. The code that makes our transaction IDs had been running for years, and it looked correct, because today it *is* correct.
+
+But it had a date on it. On one day, some IDs would start quietly turning into *other* IDs. On a later one, every ID would start losing a digit, and keep losing it for months.
+
+This is how we found those dates before they arrived, what would have broken, and how we fixed it without changing a single ID issued today.
+
+<Callout type="note" title="About the numbers in this post">
+The bug, how we found it and the way we fixed it are real. The ID format isn't ours: the example scheme below is built on the classic snowflake layout and breaks in exactly the same ways, on its own dates. Its numbers, and the exact digits the fix uses, are illustrative. Our real format stays private.
+</Callout>
+
+<Callout type="insight" title="The short version">
+- **The bug:** each ID's first digit comes from a part of the number that grows with time. When it reaches 9, a 16-digit ID passes the largest whole number JavaScript can hold exactly. When it rolls over to 0, `parseInt` drops it.
+- **The impact:** transactions sharing one ID, then IDs too short to be valid. And it comes back every few years.
+- **The fix:** change that one digit only when it would break, and check every ID is new before writing it.
+- **How long it lasts:** as long as the ID layout itself, checked month by month.
+</Callout>
+
+## How a transaction ID is born
+
+Every payment needs an ID: something unique to find it by, refund it by, and match it against the bank's records later. Ours start life as a <Term id="snowflake-id">snowflake ID</Term>, the design Twitter published in 2010.
+
+A snowflake is one 64-bit number built from three smaller ones. In the classic layout:
+
+1. **The time**: 41 bits of milliseconds since a fixed start date. In our example, 1 January 2014.
+2. **A machine number**: 10 bits, 0 to 1023, so two servers never make the same ID.
+3. **A counter**: 12 bits, so one machine can make up to 4,096 IDs in a single millisecond.
+
+They're packed side by side with a <Term id="bit-shift">bit shift</Term>: the time slides 22 bits to the left, which leaves 22 empty bits at the bottom for the machine and the counter.
+
+```js title="Making a snowflake (the classic layout)"
+const EPOCH = Date.UTC(2014, 0, 1);
+const snowflake = (BigInt(Date.now() - EPOCH) << 22n) | (machine << 12n) | counter;
+```
+
+<Callout type="story">
+A stamped queue ticket. The date and time go on the left, then the counter number, then the ticket's place in the queue. Two tickets can only match if all three parts match, and since the clock only moves forward, tickets even sort themselves by time.
+</Callout>
+
+That gives a 19-digit number. But in the example, the systems an ID travels to expect **16 digits**. So the code **folds** the snowflake: it keeps digit 2, which changes slowly and says roughly *when*, then the last 15 digits, which change every millisecond.
+
+Here's one ID being made. Press **Next** to go step by step, then switch the date and watch the same code produce something very different. The last two steps run your browser's real `parseInt`, so what you see is what the code would actually get.
+
+<IdMachine />
+
+## The digit that moves
+
+Look at where the ID's first digit comes from: the snowflake's **second** digit. And the snowflake is mostly time, multiplied by 4,194,304. It grows by about four million every millisecond.
+
+<Predict
+  question="In the example, today's IDs start with 6. What will they start with in March 2029?"
+  options={[
+    "Still 6: the first digit is fixed",
+    "9",
+    "0",
+    "Something random, it depends on the transaction",
+  ]}
+  answer={2}
+>
+The second digit of a growing number keeps counting. In the example it moves up by one about every **nine months**: it reaches 9 on 10 May 2028 and rolls over to **0** on 9 February 2029. One step is 10<sup>17</sup> in the snowflake; divide by 2<sup>22</sup> and that's about 276 days of milliseconds.
+</Predict>
+
+<FirstDigitTimeline />
+
+| First digit of the ID | From (UTC) | Until | What happens |
+| --- | --- | --- | --- |
+| 6 (today) | 2 Feb 2026 | 5 Nov 2026 | fine |
+| 7 | 5 Nov 2026 | 8 Aug 2027 | fine |
+| 8 | 8 Aug 2027 | 10 May 2028 | fine |
+| 9 | 10 May 2028, 00:01:40 | 9 Feb 2029 | **rounded to other IDs** |
+| 0 | 9 Feb 2029, 22:45:58 | 12 Nov 2029 | **loses a digit** |
+| 1 | 12 Nov 2029 | 15 Aug 2030 | fine |
+
+Nobody wrote this down because nobody had to. On the day the fold was written, the first digit was a perfectly ordinary number.
+
+## What breaks when the digit reaches 9
+
+### JavaScript numbers aren't integers
+
+A JavaScript `number` is a 64-bit floating-point value. Only 53 of those bits hold the digits, so whole numbers are exact only up to 2<sup>53</sup> − 1: **9,007,199,254,740,991**, called a <Term id="safe-integer">safe integer</Term>. Past that, the gaps between the numbers JavaScript *can* store grow to 2, then 4, then 8. Anything in between rounds to a neighbour.
+
+<Predict
+  question='What does parseInt("9007199254740993") return?'
+  options={["9007199254740993", "9007199254740992", "An error: the number is too big", "Infinity"]}
+  answer={1}
+>
+`9007199254740992`. Odd numbers don't exist up there, so JavaScript silently rounds to the nearest even one. No error, no warning. Try it in your browser's console.
+</Predict>
+
+```js title="Try it in your browser's console"
+Number.MAX_SAFE_INTEGER                  // 9007199254740991
+parseInt("9007199254740993")             // 9007199254740992, not what you typed
+JSON.parse('{"id":9007199254740993}').id // 9007199254740992, JSON rounds too
+```
+
+A 16-digit number that starts with 9 almost always passes that limit: across the example's whole "9" window, **over 99%** of IDs would. Here is what that does to six transactions made one after another:
+
+<RoundingRows />
+
+Two transactions, one ID. Anything that looks a payment up by its ID can now find the wrong one.
+
+<Callout type="note" title="What the logs would have said (illustrative)">
+```text
+2028-06-01 04:30:00.123  created  id=9040060625928236  amount=500.00
+2028-06-01 04:30:00.123  created  id=9040060625928236  amount=120.00
+```
+Two customers, two payments, one ID. Nothing in the code changed that morning, and nothing was deployed. That's what makes a dated bug so hard to debug when it finally fires.
+</Callout>
+
+## What breaks when it rolls over to 0
+
+Nine months later the moving digit rolls from 9 to 0, and every ID starts with a zero. Text keeps its leading zeros; numbers don't.
+
+```js
+parseInt("0971947934728234")   // 971947934728234: 15 digits
+```
+
+A 16-digit ID comes out 15 digits long. About one ID in ten has another zero right behind the first, and loses two or more. In the example it stays like that until 12 November 2029. Anything downstream that checks the length of an ID would reject it; anything that doesn't would store a value that no longer matches the one in the logs.
+
+## Two more bugs, found on the way
+
+### The fields overlapped
+
+In the example, the released code shifted the machine number by 10 instead of 12. The counter is 12 bits wide, so the machine's lowest two bits landed on the counter's highest two, while two bits above the machine were never used:
+
+<BitLayout />
+
+When two fields share a bit, an OR can't tell whose bit it is. **Machine 1 with counter 0, and machine 0 with counter 1,024, produce the identical snowflake.** Two different servers, the same ID.
+
+### Some services wrote IDs without checking them
+
+The fold keeps 16 of 19 digits and throws three away, so two different snowflakes *can* fold to the same ID. For example, `1692419280593109034` and `1693419280593109034`, made 2 days and 18 hours apart on machines 100 and 204, differ only in their 4th digit, which the fold leaves out. Both become `6419280593109034`.
+
+That's rare, but possible, which is why some of our services looked the ID up before using it. **Some didn't.** And in some databases, writing a row whose key already exists isn't an error at all. It's an <Term id="upsert">upsert</Term>:
+
+<Compare leftTitle="A database that rejects duplicates" rightTitle="A database that upserts" leftTone="ok" rightTone="bad">
+
+```text title="The second write fails loudly"
+INSERT id 6419280593109034, 500
+→ ok
+INSERT id 6419280593109034, 120
+→ error: duplicate key
+```
+
+```text title="The second write wins silently"
+INSERT id 6419280593109034, 500
+→ ok
+INSERT id 6419280593109034, 120
+→ ok, and the 500 row is gone
+```
+
+</Compare>
+
+A repeated ID in those services wouldn't fail. It would overwrite **another customer's transaction**, and say nothing.
+
+## How we found it
+
+We weren't hunting for a bug. We were merging. Several services each carried their own copy of the ID generator, and the copies had drifted apart: some checked the ID before using it and some didn't; some rejected a repeat they remembered and others retried. We wanted **one** module, tested once.
+
+<Steps>
+<Step title="Make the clock something a test can control">
+A test that reads the real clock can only ever test *today*. So the new generator takes its clock as an argument, along with its machine number, and production passes the real ones:
+
+```js title="Dependency injection, the small version"
+const createGenerator = ({ now, machine }) => { /* … */ };
+
+// Production passes the real clock and this server's machine number:
+const generate = createGenerator({
+  now: Date.now,
+  machine: MACHINE_ID,
+});
+```
+
+Now a test can say `now: () => Date.UTC(2029, 2, 1)` and get an ID from 2029.
+</Step>
+<Step title="Work out the expected values by hand, not by running the code">
+If a test's expected value is copied from the code's own output, it only proves the code agrees with itself. We computed each expected ID independently: the shifted time, plus the machine and the counter, then the fold, by hand. Then we pinned them.
+</Step>
+<Step title="Ask what an ID looks like in the future">
+With a controllable clock, the obvious next question was: *does the promise "always the right length, always exact" hold next year? In ten years?* We stepped the clock forward a month at a time, and it broke twice: first for IDs starting with 9, then for IDs starting with 0.
+</Step>
+<Step title="Find the exact millisecond">
+The first digit changes when the snowflake crosses a round number. In the example, 9 arrives at 1.9 × 10<sup>18</sup>: divide by 2<sup>22</sup>, add the start date, and you get **10 May 2028, 00:01:40 UTC**. The same sum for 2.0 × 10<sup>18</sup> gives **9 February 2029, 22:45:58 UTC**.
+</Step>
+<Step title="Prove the damage with the real function">
+Dates on paper aren't enough. We built 100 consecutive IDs inside the "9" window and ran them through the real `parseInt`: **100 different IDs came back as 51 numbers**.
+</Step>
+</Steps>
+
+<Callout type="warning" title="You can't find this by reading the code">
+Every line looks right, and today every line *is* right. The bug isn't in any line; it's in where one value is heading. The only way to see it is to compute forward in time.
+</Callout>
+
+## The lines that break
+
+Here they are in the example scheme. Ours look different, but they fail the same way. The highlighted lines are the problem.
+
+```js title="The released generator and fold (example scheme)" {2,4,6}
+const time = BigInt(Date.now() - EPOCH);
+const s = ((time << 22n) | (machine << 10n) | counter).toString(); // should be 12n
+// the ID's first digit is s[1], the digit that moves
+const id = s[1] + s.slice(4);
+// … later, in each service …
+const transactionId = parseInt(id); // rounds past 2^53, drops a leading 0
+```
+
+`parseInt` is where the damage happens, but it isn't the bug. The bug is the fold: it hands `parseInt` a value that only fits by luck of the calendar. That decided *where* to fix it. The fold lives in one place; the numbers it produces are read in many places, some of them in systems we don't own.
+
+## The fix
+
+The rule: **if the folded ID would break, make its first digit 1.** A 16-digit number that starts with 1 never has a leading zero and is always far below 2<sup>53</sup>. Everything else about the ID stays the same.
+
+<FixFlow />
+
+```js title="toTransactionId (example scheme)"
+const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+
+const isSafe = (id) =>
+  id.length === 16 && id[0] !== "0" && BigInt(id) <= MAX_SAFE;
+
+function toTransactionId(s) {
+  if (s.length !== 19) throw new Error(`Expected 19 digits, got ${s}`);
+  const folded = s[1] + s.slice(4);
+  return isSafe(folded) ? folded : "1" + folded.slice(1);
+}
+```
+
+The check uses <Term id="bigint">BigInt</Term>, so the comparison itself can't round. The overlapping fields got a one-line fix of their own:
+
+```js title="Fields that don't overlap"
+const s = ((time << 22n) | (machine << 10n) | counter).toString(); // [!code --]
+const s = ((time << 22n) | (machine << 12n) | counter).toString(); // [!code ++]
+```
+
+And the services that wrote IDs blindly now do what the others always did: look the ID up first, make a new one if it's taken (a few times at most), and fail the request cleanly if the lookup itself fails. The generator is now one small module with no network, no cache and no retries. It makes an ID and nothing else, so it can be tested completely.
+
+## Decisions we made, and the ones we didn't
+
+| Option | What we decided |
+| --- | --- |
+| Keep IDs as text, or `BigInt`, everywhere | The real long-term fix, but it changes the contract of every service that sends or receives an ID, including systems we don't own. Not as a side effect of a bug fix. |
+| Shorten the ID to 15 digits, which is always safe | No. The length is part of the same contract. We kept the length and made the value safe. |
+| Switch to UUIDs | Same contract problem, only bigger: not numeric, not the same length. |
+| Change the fold for every ID, starting now | No. Every ID issued today would change. Our rule touches only IDs that would otherwise break. |
+| Pick a random first digit | No. A fixed rule is deterministic and easy to test. |
+| Keep making IDs when the layout runs out | No. The generator throws. A loud error beats a quietly wrong ID. |
+| Trust the fold to be unique | No. Every service checks the ID is new before writing it, because the fold *will* repeat eventually. |
+
+## Impact
+
+| | Before | After |
+| --- | --- | --- |
+| IDs in the "9" months | over 99% above 2<sup>53</sup> − 1; neighbours collide (100 → 51) | exact |
+| IDs in the "0" months | lose one digit or more | full length, exact |
+| Services that can overwrite a transaction by repeating an ID | some | none |
+| Snowflake fields | overlapping | one owner per bit |
+| ID generators | one copy per service, drifting apart | one shared module |
+| IDs issued today | | unchanged, character for character |
+| Cost | | one indexed read per new transaction, where the check was missing |
+
+In payments an ID isn't decoration. Refunds, reconciliation and the bank's own records all find a transaction by it. A shared ID means one customer's payment can be refunded, reported or overwritten as another's. Catching that ahead of time turns a midnight incident into an ordinary pull request.
+
+## How we know it holds
+
+- **Dated tests.** Each failure window has its own tests, at its edges and inside it, with expected values worked out independently and then pinned.
+- **The sweep.** One test walks every month for decades ahead, at the smallest and the largest machine number, and checks the promise: the right length, no leading 0, never above 2<sup>53</sup> − 1.
+- **Old versus new.** Equivalence tests send the same requests to the released services and the new ones and compare what each one writes and calls, so any difference is a decision rather than an accident. New cases cover the ID path: an ID that already exists is replaced, a run of taken IDs writes nothing, and a failed lookup writes nothing.
+- **Coverage.** Unit tests cover every line and branch of the generator.
+
+Here is that sweep for the example scheme, drawn. It's the clearest picture of why "fixed for now" wasn't good enough:
+
+<FutureSweep />
+
+## How long will it last, and why not longer?
+
+A fix with a date on it should say what its own date is. For the example scheme, bit by bit:
+
+- **Every month until the layout runs out** is tested, including every later return trip of the same bug.
+- **The fix never runs out on its own.** A 16-digit ID that starts with 1 is always safe, whatever the date.
+- **The layout runs out first.** 41 bits of milliseconds is about 69 years, so the example's clock fills up on **7 September 2083**. From then on the generator throws instead of making an ID. Twitter's layout makes the same trade: 41 bits of time from its own start date, enough for 69 years.
+- **A changed digit can repeat an older ID.** IDs that start with 1 are issued naturally too, for nine months in every 7½ years. A repeat needs all 15 other digits to match as well, so it's rare, and the check before every write catches it.
+
+**Why not longer?** Because the shape is the limit. Sixteen digits can't hold the information in nineteen, so *any* fold throws digits away, will repeat sometimes, and runs out eventually. Going further means changing the shape: IDs as text end to end, or a wider format. That's a contract change across systems we don't own, and a project of its own. Decades of runway, for a change nobody downstream can see, is the right trade today.
+
+## What developers often get wrong
+
+**"If the tests pass, the code works."** Tests that read the real clock only test today. Inject the clock, then test tomorrow, and the day the digit rolls over.
+
+**"JavaScript numbers are integers."** They're floating-point. Whole numbers are exact only up to 9,007,199,254,740,991; past that, odd numbers simply don't exist.
+
+**"`parseInt` checks the input."** It converts whatever you give it, silently: it drops leading zeros, rounds big numbers and stops at the first non-digit (`parseInt("12abc")` is `12`). It never throws.
+
+**"An INSERT fails if the key already exists."** In some databases it overwrites. Know which kind yours is before you rely on it.
+
+**"Snowflake IDs are unique."** The full snowflake usually is. Fold it, shorten it, or let its fields overlap, and that guarantee is gone.
+
+## Summary
+
+<FiveQuestions
+  problem="Every payment needs a unique ID that any server can make instantly. Snowflake IDs do that by packing time, a machine number and a counter into one number, which is then often folded into a shorter ID."
+  sees="Nothing, until a date. In the example, IDs start rounding onto each other on 10 May 2028, and every ID loses its leading 0 from 9 February 2029. No deploy, no code change, no error message."
+  underneath="The ID's first digit is the snowflake's second digit, and the clock drives it. It reaches 9, which passes 2^53 − 1 at 16 digits, then 0, which `parseInt` drops. Then it happens again, every few years."
+  breaks="Two transactions sharing one ID, records overwritten without an error where the database upserts, and IDs too short to be valid."
+  misconception="That code correct today stays correct, that JavaScript numbers are integers, that `parseInt` validates, and that a folded snowflake is still unique."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "What is the largest integer a JavaScript `number` holds exactly?",
+      options: ["2^31 − 1", "2^53 − 1", "2^63 − 1", "There's no limit"],
+      answer: 1,
+      why: "Numbers are 64-bit floating-point values with 53 bits for the digits, so 9,007,199,254,740,991 is the last integer that is always exact.",
+    },
+    {
+      q: "In the example scheme, where does the ID's first digit come from?",
+      options: ["A random digit", "The machine number", "The snowflake's second digit, which moves with time", "The counter"],
+      answer: 2,
+      why: "The fold starts with digit 2 of the snowflake. Because the snowflake is mostly time, that digit goes up by one about every nine months.",
+    },
+    {
+      q: "What does `parseInt(\"0971947934728234\")` return?",
+      options: ["The same 16 digits", "971947934728234, 15 digits", "An error", "NaN"],
+      answer: 1,
+      why: "Numbers don't keep leading zeros. The text has 16 characters; the number has 15 digits.",
+    },
+    {
+      q: "Why did the released layout's fields overlap?",
+      options: [
+        "The time was shifted by 20 instead of 22",
+        "The machine was shifted by 10, but the counter uses 12 bits, so they shared two bits",
+        "BigInt has a size limit",
+        "The counter wrapped too early",
+      ],
+      answer: 1,
+      why: "The counter runs from bit 0 to bit 11, so the machine has to start at bit 12. Starting it at bit 10 put two bits under both fields.",
+    },
+    {
+      q: "Why didn't we fix this by changing every `parseInt` to `BigInt`?",
+      options: [
+        "BigInt is too slow",
+        "The numbers are read in many places, including systems we don't own, so the source of the bad value is the place to fix",
+        "BigInt can't hold 16 digits",
+        "parseInt was not involved",
+      ],
+      answer: 1,
+      why: "The fold is in one place. The IDs it produces travel everywhere. Fixing the source keeps every reader correct without changing any contract.",
+    },
+    {
+      q: "How did the bug get found?",
+      options: [
+        "A customer complaint",
+        "A production alert",
+        "Testing the generator with an injected clock, moved forward month by month",
+        "A code review comment",
+      ],
+      answer: 2,
+      why: "The code is correct today, so nothing today could show it. Controlling the clock let the tests ask what an ID looks like years from now.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="How does a snowflake ID work, and why use one instead of a database sequence?">
+It packs the current time in milliseconds, a machine number and a per-machine counter into one 64-bit number. Any server can make one instantly without asking a database, the IDs sort roughly by time, and two servers never clash as long as their machine numbers differ. A database sequence needs a round trip for every ID and becomes a single point of contention.
+</Question>
+<Question q="What is Number.MAX_SAFE_INTEGER, and what happens above it?">
+It's 2^53 − 1, the largest integer a JavaScript number can always hold exactly, because doubles have 53 bits of precision. Above it the gap between representable numbers is 2 (then 4, 8 and so on), so other integers round to a neighbour without any error. That's why large IDs should travel as strings or BigInt, and why `JSON.parse` silently corrupts 64-bit IDs.
+</Question>
+<Question q="How would you test code that depends on the current time?">
+Pass the clock in as a dependency instead of calling Date.now() directly, and let production pass the real one. Then tests can pin any moment: the exact millisecond before and after a boundary, and a sweep across years. Work out expected values independently of the code, so the test isn't just checking the code against itself.
+</Question>
+<Question q="You find a bug that will fire in two years. How do you decide how to fix it?">
+Measure it first: the exact date, who is affected and how badly. Then fix it at the source, where the bad value is created, rather than at every place it's read. Prefer a fix that doesn't change today's behaviour, so nothing downstream has to move. Make it fail loudly instead of returning a bad value, write tests that pin the date, and write down how long the fix lasts and what would replace it.
+</Question>
+<Question q="Why can an INSERT overwrite data, and how do you protect against duplicate IDs?">
+Some databases treat INSERT as an upsert: if the key exists, the row is replaced and no error is raised. If IDs can ever repeat, check the key before writing, or use a conditional write that only succeeds if the row doesn't exist yet, and regenerate the ID on a clash. Better still, make the ID unique by construction, for example by not throwing digits away.
+</Question>
+<Question q="A 19-digit snowflake is folded into 16 digits. Can the result be guaranteed unique?">
+No. There are up to 10^19 snowflakes and only 10^16 possible 16-digit IDs, so on average 1,000 snowflakes share every ID: the pigeonhole principle. A fold can make repeats rare, never impossible. Uniqueness has to come from somewhere else: a check before writing, a conditional insert, or an ID scheme whose every digit carries information.
+</Question>
+</Interview>
+
+### Sources and further reading
+
+- MDN Web Docs: [Number.MAX_SAFE_INTEGER](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER), [parseInt()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/parseInt) and [BigInt](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/BigInt)
+- RFC 8259, section 6: [numbers in JSON](https://www.rfc-editor.org/rfc/rfc8259#section-6), and why integers beyond 2<sup>53</sup> aren't interoperable
+- Twitter's original [Snowflake README](https://github.com/twitter-archive/snowflake/tree/snowflake-2010) (2010): 41 bits of time from a custom epoch, 10 of machine, 12 of sequence
+- [The Floating-Point Guide](https://floating-point-gui.de/): what every programmer should know about floating-point arithmetic
