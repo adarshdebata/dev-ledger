@@ -415,7 +415,7 @@ function Down() {
 export function FixFlow() {
   return (
     <figure className="not-prose my-8 rounded-2xl border border-line px-4 py-6 sm:px-6">
-      <p className="eyebrow text-accent">toTransactionId(snowflake)</p>
+      <p className="eyebrow text-accent">safeFold(snowflake)</p>
       <div className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div>
           <Box>

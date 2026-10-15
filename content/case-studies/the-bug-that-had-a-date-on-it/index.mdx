@@ -170,16 +170,16 @@ We weren't hunting for a bug. We were merging. Several services each carried the
 A test that reads the real clock can only ever test *today*. So the new generator takes its clock as an argument, along with its machine number, and production passes the real ones:
 
 ```js title="Dependency injection, the small version"
-const createGenerator = ({ now, machine }) => { /* … */ };
+const makeIdFactory = ({ clock, machine }) => { /* … */ };
 
 // Production passes the real clock and this server's machine number:
-const generate = createGenerator({
-  now: Date.now,
+const nextId = makeIdFactory({
+  clock: Date.now,
   machine: MACHINE_ID,
 });
 ```
 
-Now a test can say `now: () => Date.UTC(2029, 2, 1)` and get an ID from 2029.
+Now a test can say `clock: () => Date.UTC(2029, 2, 1)` and get an ID from 2029.
 </Step>
 <Step title="Work out the expected values by hand, not by running the code">
 If a test's expected value is copied from the code's own output, it only proves the code agrees with itself. We computed each expected ID independently: the shifted time, plus the machine and the counter, then the fold, by hand. Then we pinned them.
@@ -220,13 +220,13 @@ The rule: **if the folded ID would break, make its first digit 1.** A 16-digit n
 
 <FixFlow />
 
-```js title="toTransactionId (example scheme)"
+```js title="safeFold (example scheme)"
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 
 const isSafe = (id) =>
   id.length === 16 && id[0] !== "0" && BigInt(id) <= MAX_SAFE;
 
-function toTransactionId(s) {
+function safeFold(s) {
   if (s.length !== 19) throw new Error(`Expected 19 digits, got ${s}`);
   const folded = s[1] + s.slice(4);
   return isSafe(folded) ? folded : "1" + folded.slice(1);

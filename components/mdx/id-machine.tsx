@@ -144,7 +144,7 @@ export default function IdMachine() {
     { code: "digit 2", value: `"${id[0]}"` },
     { code: "+ last 15", value: `"${id}"` },
     { code: "parseInt(id, 10)", value: back.value, bad: broken, good: !broken },
-    { code: "toTransactionId()", value: `"${fixed}"`, good: true },
+    { code: "safeFold(s)", value: `"${fixed}"`, good: true },
   ];
 
   const snowTone = (i: number): keyof typeof TONE => {
@@ -246,7 +246,7 @@ export default function IdMachine() {
           })}
         </Row>
 
-        <Row title="With the fix" note="toTransactionId()" badge={step >= 7 ? <Badge ok>{swapped ? "first digit 1 · exact" : "unchanged"}</Badge> : undefined}>
+        <Row title="With the fix" note="safeFold(s)" badge={step >= 7 ? <Badge ok>{swapped ? "first digit 1 · exact" : "unchanged"}</Badge> : undefined}>
           {Array.from({ length: LENGTH }, (_, i) =>
             step >= 7 ? <Digit key={`${k}-f${i}`} d={fixed[i]} tone={swapped && i === 0 ? "good" : "plain"} delay={i * 0.02} /> : <Slot key={i} />,
           )}
