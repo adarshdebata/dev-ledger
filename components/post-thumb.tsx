@@ -11,6 +11,7 @@ export function thumbFor(post: Pick<PostMeta, "thumb" | "tags">): Motif {
   if (post.tags.includes("dns")) return "lookup";
   if (post.tags.includes("cors")) return "origins";
   if (post.tags.includes("security")) return "shield";
+  if (post.tags.includes("ids")) return "ids";
   return "journey";
 }
 
@@ -98,6 +99,37 @@ const MOTIFS: Record<Motif, React.ReactNode> = {
       <rect x="18" y="58.5" width="32" height="3" rx="1.5" className="fill-ok" />
       <rect x="8" y="78" width="64" height="5" rx="2.5" className="fill-line-strong" />
       <rect x="8" y="88" width="44" height="5" rx="2.5" className="fill-line" />
+    </>
+  ),
+  // A long time-based number folds into a shorter ID; the first digit is the one that breaks.
+  ids: (
+    <>
+      {Array.from({ length: 19 }, (_, i) => (
+        <rect
+          key={`s${i}`}
+          x={8.5 + i * 7.6}
+          y="20"
+          width="6.2"
+          height="12"
+          rx="1.6"
+          className={i === 1 ? "fill-accent-soft" : i >= 4 ? "fill-teal-soft/55" : "fill-line-strong"}
+        />
+      ))}
+      <path d="M19.2 33 L23 61" strokeWidth="1.2" strokeDasharray="2.5 2.5" className="thumb-flow stroke-accent-soft" />
+      <path d="M95.2 33 L83.8 61" strokeWidth="1.2" strokeDasharray="2.5 2.5" className="thumb-flow stroke-teal-soft" />
+      {Array.from({ length: 16 }, (_, i) => (
+        <rect
+          key={`i${i}`}
+          x={19.9 + i * 7.6}
+          y="62"
+          width="6.2"
+          height="12"
+          rx="1.6"
+          className={i === 0 ? "thumb-pulse fill-bad" : "fill-teal-soft/55"}
+        />
+      ))}
+      <rect x="19.9" y="84" width="64" height="5" rx="2.5" className="fill-line-strong" />
+      <rect x="19.9" y="93" width="40" height="5" rx="2.5" className="fill-line" />
     </>
   ),
   // A project, its packages, and the one shared store they all link into.

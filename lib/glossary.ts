@@ -243,6 +243,26 @@ export const glossary = {
     term: "DNS search suffix",
     def: "A domain your computer adds to names, so typing “wiki” can mean wiki.corp.example. Windows' nslookup adds it even to names that already have dots.",
   },
+  "snowflake-id": {
+    term: "Snowflake ID",
+    def: "A 64-bit number built from the current time, a machine number and a counter. Any server can make one without asking a database, and they sort roughly by time. Twitter made the idea popular.",
+  },
+  "bit-shift": {
+    term: "Bit shift",
+    def: "Sliding a number's bits left or right. Shifting left by 22 multiplies by 2^22 (4,194,304) and leaves 22 empty bits at the bottom for other data.",
+  },
+  "safe-integer": {
+    term: "Safe integer",
+    def: "A whole number a JavaScript number can hold exactly: up to 9,007,199,254,740,991 (2^53 − 1). Above that, some whole numbers can't be stored, and they round to a neighbour.",
+  },
+  bigint: {
+    term: "BigInt",
+    def: "JavaScript's whole-number type with no size limit, written with an n on the end: 42n. It never rounds, but it can't be mixed with ordinary numbers in maths.",
+  },
+  upsert: {
+    term: "Upsert",
+    def: "Update or insert: a write that adds the row if its key is new, and quietly replaces the old row if the key already exists. No error either way.",
+  },
 } as const;
 
 export type GlossaryId = keyof typeof glossary;

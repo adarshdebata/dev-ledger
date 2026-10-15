@@ -243,6 +243,14 @@ body::before {
   @media (width >= 80rem) { margin-left: calc((64rem - var(--breakout)) / 2); }
 }
 
+/* Wide figures on pages without a table of contents (case studies): centred on the column at every width. */
+@utility breakout-center {
+  --breakout: min(70rem, calc(100vw - 3rem));
+  width: var(--breakout);
+  max-width: none;
+  margin-left: calc(50% - var(--breakout) / 2);
+}
+
 /* The table of contents fades out while a wide figure passes underneath it. */
 [data-toc-panel] { transition: opacity 0.3s, transform 0.3s; }
 html[data-wide-in-view] [data-toc-panel] { opacity: 0; transform: translateX(12px); pointer-events: none; }
