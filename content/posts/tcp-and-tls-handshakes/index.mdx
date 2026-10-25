@@ -1,0 +1,354 @@
+---
+title: "TCP & TLS: The Handshakes Before Your First Byte"
+subtitle: "Before your request can leave, two handshakes have to finish. Here's what they say, why they cost round trips, and what HTTPS still tells everyone on the network."
+date: 2026-10-25
+series: 1
+roadmap: [13, 14, 18, 19, 20]
+tags: [tcp, tls, https, browser, debugging, performance]
+author: adarshdebata
+thumb: handshake
+summary: "Every new HTTPS connection pays for two handshakes before a single byte of your request moves: TCP to open a reliable connection, TLS to agree on keys and check the certificate. Here's what each message says, why TLS 1.3 and connection reuse matter more than any server tuning, what HTTPS still reveals, and how to debug the errors each handshake throws."
+---
+
+**You use it every day. But do you actually know what happens underneath?** In the [first post of this week](/posts/one-request-seven-stops/), two bars in Chrome's Timing tab came right after DNS: **Initial connection** and **SSL**. Together they took 306 ms, and the request hadn't even been sent yet.
+
+The [last post](/posts/dns-how-a-name-becomes-an-address/) got the browser an address. This one follows what happens next: two handshakes, one for <Term id="tcp">TCP</Term> and one for <Term id="tls">TLS</Term>. By the end you'll be able to count the round trips of any connection in your head, and you'll know exactly what HTTPS hides and what it doesn't.
+
+## What you see
+
+Handshakes are invisible when they work. They show up in three ways:
+
+- **The first request is slow, the rest are fast.** Your API answers in 80 ms when you click again, but the first call after a page load takes 400 ms.
+- **A service call is slow for no reason.** The server says it spent 5 ms, but every call from your backend to it takes 150 ms.
+- **An error before any HTTP happens:**
+
+<DevTools
+  console={[
+    { level: "error", text: "GET https://api.example.com/orders net::ERR_CERT_COMMON_NAME_INVALID" },
+    { level: "error", text: "GET https://localhost:3000/ net::ERR_SSL_PROTOCOL_ERROR" },
+  ]}
+/>
+
+And in Node.js, the one every backend developer meets sooner or later:
+
+```text title="Node.js (real error message)"
+Error: unable to verify the first certificate; if the root CA is installed locally,
+try running Node.js with --use-system-ca
+  code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'
+```
+
+Before reading on, take a guess:
+
+<Predict
+  question="A server is 150 ms away (one round trip). With HTTPS and TLS 1.3, how long before the first byte of the response can arrive, if the server answers instantly?"
+  options={["150 ms", "300 ms", "450 ms", "600 ms"]}
+  answer={2}
+>
+**450 ms: three round trips.** One to open the TCP connection, one for the TLS handshake, and one for the request and its response. The server's speed doesn't change any of them. Only distance, and the number of round trips, does.
+</Predict>
+
+## What's underneath
+
+### Why handshakes at all?
+
+The network underneath your browser only promises to *try* to deliver packets. They can get lost, arrive twice, or arrive out of order, and anyone on the way can read them. Two jobs have to be done before HTTP can work:
+
+1. **TCP makes it reliable.** It numbers every byte so lost pieces get sent again and the receiver can put them back in order. Both sides need each other's starting number first. That agreement is the TCP handshake.
+2. **TLS makes it private.** The two sides agree on secret keys over a network anyone can watch, and the browser checks it's really talking to `api.example.com` and not an impostor. That's the TLS handshake.
+
+Each handshake is a conversation, and every "send and wait for the answer" costs one <Term id="round-trip">round trip</Term>. Distance sets the price of each one: about 1 ms for every 100 km there and back, and real routes are longer than a straight line.
+
+### Follow one connection
+
+Here's the whole conversation, one message at a time. The counter on the right adds up round trips, and the panel shows what someone on the same Wi-Fi could read from each message. Start with **HTTPS, TLS 1.3**, then compare the others. Try changing how far away the server is.
+
+<HandshakeTimeline />
+
+### The TCP handshake: why three messages?
+
+**SYN**, **SYN-ACK**, **ACK**. The browser says "let's talk, I'll start counting from *x*". The server answers "agreed, and I'll start from *y*". The browser confirms. Each side has now heard the other's starting number, and knows the other heard its own. Two messages can't do that: the server would never know its number arrived.
+
+Notice the cost: it's **one round trip, not one and a half.** The browser doesn't wait after its ACK. It sends the next thing, the TLS ClientHello or a plain HTTP request, right behind it.
+
+### The TLS handshake: keys and trust
+
+The ClientHello says which TLS versions and ciphers the browser supports. The server picks one and sends back its <Term id="certificate">certificate</Term>. Two things then happen:
+
+- **A <Term id="key-exchange">key exchange</Term>.** Each side sends a public half; only the two of them can combine the halves into the same secret key. Someone recording every packet still can't work it out.
+- **A trust check.** The browser checks the certificate is for this exact name, hasn't expired, and was signed, through a chain of <Term id="intermediate-certificate">intermediate certificates</Term>, by a <Term id="certificate-authority">certificate authority</Term> it already trusts.
+
+**TLS 1.2 needs two round trips for this; TLS 1.3 needs one.** The trick in 1.3 is a guess: the browser sends its half of the key exchange in the very first message instead of waiting to be asked. The server almost always accepts the guess, and a whole round trip disappears.
+
+We wanted to see that with our own eyes, not take it from a spec. So we put a small proxy in front of a local HTTPS server that holds every packet for about 60 ms each way, making one round trip about 120 ms. Then we timed Node.js connecting with each version:
+
+```text title="TLS 1.2, then TLS 1.3, through a 120 ms round trip (real output)"
+TLS 1.2   tls done   257 ms   first byte of the response   367 ms
+TLS 1.3   tls done   127 ms   first byte of the response   255 ms
+```
+
+TLS 1.2 took two round trips, TLS 1.3 one, and the request itself one more each time. (The TCP handshake to the proxy was local, so it isn't in these numbers.) The proxy also logged each flight of packets. TLS 1.2 went back and forth six times before the response was complete; TLS 1.3, four.
+
+<Callout type="insight" title="Why was TLS 1.3's first message bigger?">
+In our capture, the TLS 1.2 ClientHello was 259 bytes. The TLS 1.3 one was **1,475 bytes**. That's the guessed key exchange: Node.js 24 already sends a key share for a post-quantum key exchange, `X25519MLKEM768`, which is much larger than the classic kind. When we connected Node.js to `example.com`, that's the one the two sides agreed on, and `openssl s_client` agreed on it too. Your HTTPS traffic may already be protected against future quantum computers, and nobody told you.
+</Callout>
+
+### What HTTPS hides, and what it doesn't
+
+People often say "HTTPS encrypts everything". It doesn't, and the gap matters. In our lab, we searched every byte the client sent for the things in the request:
+
+| In the request | Plain HTTP | HTTPS |
+| --- | --- | --- |
+| Server name `api.example.com` | readable | **readable** (in the ClientHello) |
+| Path `/orders` | readable | hidden |
+| Query string `?card=4111…` | readable | hidden |
+| `Cookie: session=…` | readable | hidden |
+| `Authorization: Bearer …` | readable | hidden |
+
+The name is there because of <Term id="sni">SNI</Term>, Server Name Indication. One IP address often hosts hundreds of sites, so the server needs the name *before* encryption starts, to pick the right certificate. The ClientHello also lists the protocols the browser can speak next, through <Term id="alpn">ALPN</Term>, and that was readable in our capture too.
+
+Add the IP address you connect to, your DNS lookup if it isn't encrypted, and the size and timing of every response, and someone on your network knows quite a lot: **which sites you use, when, and roughly how much.** What they can't see is what you did there. And TLS 1.3 hides one more thing than TLS 1.2: in 1.2 the server's certificate crossed the network in plain text; we found the name inside it in the 1.2 capture and not in the 1.3 one.
+
+<Callout type="note" title="Hiding the name too">
+A newer extension, Encrypted Client Hello (ECH), encrypts the name as well. It only works when the browser, the server and its DNS records all support it, so for most connections today, assume the name is visible.
+</Callout>
+
+### Reusing connections: the round trips you don't pay
+
+All of this happens **once per connection**, not once per request. After a response, browsers keep the connection open, so the next request to the same server skips DNS, TCP and TLS and costs a single round trip. That's <Term id="connection-reuse">connection reuse</Term>, called keep-alive in HTTP/1.1. `curl` shows it when you give it the same URL twice:
+
+```text title="curl -v https://example.com/ https://example.com/ (real output, trimmed)"
+* Connection #0 to host example.com:443 left intact
+* Reusing existing https: connection with host example.com
+```
+
+In our lab, the second request's TCP and TLS times were both exactly `0`.
+
+And it's not only browsers. Your backend talks to databases, caches and other services all day. Since Node.js 19, the built-in HTTP client keeps connections alive by default, and `fetch` does too. Code written for older versions, or HTTP clients configured with a new connection per call, pay both handshakes every single time. That's the "server says 5 ms, the call takes 150 ms" mystery from the top of the post.
+
+<Predict
+  question="A Node.js service calls another service 40 ms away, over HTTPS with TLS 1.3, and opens a new connection for every call. The other service answers in 5 ms. Roughly how long does each call take?"
+  options={["About 45 ms", "About 85 ms", "About 125 ms", "About 5 ms"]}
+  answer={2}
+>
+**About 125 ms.** Three round trips (TCP, TLS 1.3, the request itself) at 40 ms each, plus 5 ms of work. Reuse the connection and it's 45 ms: almost three times faster, without touching the other service.
+</Predict>
+
+### HTTP/2 and HTTP/3: fewer connections, fewer round trips
+
+**HTTP/1.1** can carry one request at a time per connection, so browsers open up to six connections per server, each paying for its own handshakes. **<Term id="http2">HTTP/2</Term>** sends many requests at once over a single connection, so it pays for the handshakes once.
+
+**HTTP/3** goes further. It runs on <Term id="quic">QUIC</Term>, over UDP, and QUIC builds TLS 1.3 into its own handshake, so there's no separate TCP step: two round trips to the first byte, the same as plain unencrypted HTTP. The catch is that the browser has to learn a server speaks HTTP/3 first. The server says so in an <Term id="alt-svc">Alt-Svc</Term> header on an ordinary response. Here's the one `example.com` sent us:
+
+```text title="curl -sI https://example.com/ (real output, one header)"
+alt-svc: h3=":443"; ma=86400
+```
+
+That means "HTTP/3 is available on port 443; remember that for 86,400 seconds (a day)". So a first visit usually starts over TCP, and later ones switch.
+
+<Callout type="note" title="And 0-RTT?">
+TLS 1.3 and QUIC can even send a request in the very first message, when reconnecting to a server you've talked to recently. This is <Term id="zero-rtt">0-RTT</Term>. The catch: an attacker who records that first message can replay it. A replayed GET is harmless; a replayed "transfer ₹500" isn't. So servers that allow 0-RTT at all should only accept it for requests that are safe to repeat.
+</Callout>
+
+## What breaks
+
+Each handshake fails in its own way, and the error tells you which one. We reproduced every row below in Chrome 155 and Node.js 24, against servers broken on purpose, except the firewall timeout:
+
+| What you see | Which handshake | Usual cause |
+| --- | --- | --- |
+| `ERR_CONNECTION_REFUSED` (Node: `ECONNREFUSED`) | TCP | Nothing is listening on that port: the server is down, or it's on a different port |
+| `ERR_CONNECTION_TIMED_OUT` (Node: `ETIMEDOUT`) | TCP | A firewall silently drops the SYN, so no answer ever comes |
+| `ERR_CERT_DATE_INVALID` (Node: `CERT_HAS_EXPIRED`) | TLS | An expired certificate, or a computer whose clock is wrong |
+| `ERR_CERT_COMMON_NAME_INVALID` (Node: `ERR_TLS_CERT_ALTNAME_INVALID`) | TLS | The certificate is for a different name |
+| `ERR_CERT_AUTHORITY_INVALID` (Node: `DEPTH_ZERO_SELF_SIGNED_CERT` or `SELF_SIGNED_CERT_IN_CHAIN`) | TLS | A self-signed certificate, or one from an issuer the client doesn't trust |
+| Works in Chrome, but Node says `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | TLS | The server doesn't send its intermediate certificate |
+| `ERR_SSL_PROTOCOL_ERROR` | TLS | You used `https://` on a port that speaks plain HTTP |
+| `ERR_EMPTY_RESPONSE` | TLS | The reverse: `http://` on a port that expects TLS. That's a Node.js server's answer; some servers, such as nginx, reply with a `400` instead |
+| Occasional `502`s, or Node's `ECONNRESET` / `socket hang up` | Reuse | One side closed an idle connection just as the other reused it |
+
+Three of these deserve a closer look, because they fool experienced developers.
+
+### "Works in Chrome, fails in Node"
+
+A certificate chain has three links: the site's certificate, one or more intermediates, and a root the client already trusts. The server is supposed to send the first two. Some don't send the intermediate. We tested a server set up that way on purpose: **Chrome opened it without complaint; Node.js refused** with `unable to verify the first certificate`. Browsers often fetch a missing intermediate by themselves. Node.js, curl, Python and most other server-side clients don't. So the browser test passes, and your backend integration fails. The fix belongs on the server: serve the full chain, usually the "fullchain" file your certificate provider gives you, not the single certificate.
+
+### A wildcard covers one level
+
+The certificate for `*.badssl.com` is valid for `wrong.host.badssl.com`... or is it? Node's real answer: `Host: wrong.host.badssl.com. is not in the cert's altnames: DNS:*.badssl.com, DNS:badssl.com`. A wildcard matches exactly **one** label. `*.example.com` covers `api.example.com`, but not `v2.api.example.com` and not `example.com` itself.
+
+### The keep-alive race behind random 502s
+
+Both ends of a reused connection have an <Term id="idle-timeout">idle timeout</Term>: how long they keep an unused connection open. Node.js closes idle connections after **5 seconds** by default, and says so in every response: `Keep-Alive: timeout=5`. Many <Term id="load-balancer">load balancers</Term> keep them much longer; AWS's Application Load Balancer defaults to 60 seconds.
+
+So the load balancer holds a connection it believes is open, Node closes it at 5 seconds, and if a request is sent down it at that exact moment, it hits a closed connection. The user gets a `502` that nobody can reproduce. The rule: **the server behind the load balancer must keep idle connections open longer than the load balancer does.**
+
+```js title="server.js"
+const server = app.listen(3000);
+// Longer than the load balancer's idle timeout (60 s here), so the load balancer always closes first.
+server.keepAliveTimeout = 65_000;
+```
+
+<Callout type="story" title="Think of it like this">
+Two people share a phone line and agree to hang up if nobody speaks for a while. One waits 60 seconds, the other only 5. At 5 seconds one hangs up, and the other starts talking into a dead line. Whoever waits less must never be the one in front.
+</Callout>
+
+## Field notes: debugging a connection
+
+<Steps>
+<Step title="Read the error code: it names the handshake">
+`CONNECTION_REFUSED` and `TIMED_OUT` are TCP: check the server is running, the port, and any firewall. Anything with `CERT` or `SSL` in it is TLS: check the certificate, the clock and the URL's scheme. If neither, the connection worked and the problem is in HTTP or the server.
+</Step>
+<Step title="Check the connection in DevTools">
+In the **Timing** tab, a long **Initial connection** with a short **SSL** inside it points at distance or TCP; a long SSL points at the TLS handshake. The **Security** panel (called **Privacy and security** in newer Chrome) shows the TLS version, key exchange and cipher of the current page. Turn on the **Protocol** column in the Network tab to see `h2` or `h3`.
+</Step>
+<Step title="Ask the server directly with openssl">
+`openssl` ships with Git for Windows, macOS and Linux. Always pass the name with `-servername`, or the server sees no SNI and may show you a different certificate:
+
+```text title="openssl s_client -connect example.com:443 -servername example.com -brief (real output)"
+Protocol version: TLSv1.3
+Ciphersuite: TLS_AES_256_GCM_SHA384
+Peer certificate: CN=example.com
+Verification: OK
+Negotiated TLS1.3 group: X25519MLKEM768
+```
+
+Add `-showcerts` to see the chain the server actually sends. Only one certificate? That's your missing intermediate.
+</Step>
+<Step title="Test the way your backend connects, not the way Chrome does">
+If a browser works and your service doesn't, test with the same client your service uses:
+
+```bash
+node -e "require('https').get('https://api.example.com', r => console.log(r.statusCode)).on('error', e => console.log(e.code))"
+```
+
+The `e.code` maps straight onto the table above.
+</Step>
+<Step title="Count connections, not just requests">
+In DevTools, turn on the **Connection ID** column: requests sharing an ID reused one connection. In `curl -v`, look for `Reusing existing https: connection`. In a backend, a new connection on every call means you're paying three round trips where one would do.
+</Step>
+<Step title="Trust a certificate properly; never switch checking off">
+On a company network that inspects HTTPS, or with an internal certificate authority, Node.js may say `self-signed certificate in certificate chain`. The tempting fix, `NODE_TLS_REJECT_UNAUTHORIZED=0`, turns off checking for **every** connection that process makes. Instead, add the extra root: `NODE_EXTRA_CA_CERTS=/path/to/company-root.pem`, or run Node.js with `--use-system-ca` so it trusts what your operating system trusts.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"HTTPS hides which sites I visit."** It hides what you do there, not where. The name travels in plain text in the ClientHello, and the IP address, DNS lookups and traffic sizes say a lot too.
+
+**"HTTPS is slow because encryption is expensive."** Encrypting is cheap for modern processors. The cost is round trips: one extra with TLS 1.3, two with TLS 1.2, none on a reused connection.
+
+**"The TCP handshake costs one and a half round trips."** The browser sends its first data right behind the final ACK without waiting, so the handshake costs exactly one.
+
+**"If Chrome accepts the certificate, everything will."** Chrome can fill in a missing intermediate and uses its own list of trusted roots. Node.js, curl and Java each make their own decision.
+
+**"Keep-alive keeps the connection open."** Until one side's idle timeout runs out, and the two sides' timeouts rarely match. That mismatch is behind a whole class of unreproducible 502s.
+
+**"`NODE_TLS_REJECT_UNAUTHORIZED=0` fixes certificate errors."** It hides all of them, including a real attacker in the middle. Add the missing root instead.
+
+## Summary
+
+<FiveQuestions
+  problem="The network only promises to try. TCP makes delivery reliable and ordered; TLS makes it private and proves the server is who it claims to be. Both must agree on things before any HTTP can flow."
+  sees="Usually just time: a slow first request, the Initial connection and SSL bars in DevTools. When it fails: ERR_CONNECTION_REFUSED or a timeout for TCP, ERR_CERT_* or ERR_SSL_PROTOCOL_ERROR for TLS, and Node.js errors such as `UNABLE_TO_VERIFY_LEAF_SIGNATURE`."
+  underneath="TCP's SYN, SYN-ACK, ACK takes one round trip. TLS 1.3 takes one more (TLS 1.2 two), to exchange keys and check the certificate chain. Then the request takes one. HTTP/3 merges the first two; a reused connection skips both."
+  breaks="Nothing listening, firewalls, expired or wrong-name certificates, missing intermediates, http and https mixed up on a port, and idle-timeout mismatches that cause random 502s."
+  misconception="That HTTPS hides which site you visit, that encryption is what makes it slow, that Chrome's verdict on a certificate is everyone's, and that switching off certificate checks is a fix."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "A server is 100 ms away. How long until the first byte of the response on a new HTTPS connection with TLS 1.3, if the server answers instantly?",
+      options: ["100 ms", "200 ms", "300 ms", "400 ms"],
+      answer: 2,
+      why: "Three round trips: TCP, the TLS 1.3 handshake, then the request and its response.",
+    },
+    {
+      q: "Why does TLS 1.3 need one round trip less than TLS 1.2?",
+      options: ["It skips the certificate check", "The browser sends its half of the key exchange in the first message", "It uses UDP", "It doesn't encrypt the handshake"],
+      answer: 1,
+      why: "The ClientHello already carries the browser's key share, so the server can finish the key exchange in its first reply.",
+    },
+    {
+      q: "Someone on your Wi-Fi watches you open `https://api.example.com/orders?id=42`. What can they read?",
+      options: ["The whole URL", "Nothing at all", "The name api.example.com, but not /orders?id=42", "Only the query string"],
+      answer: 2,
+      why: "The name travels in plain text in the ClientHello (SNI). The path and query string are inside the encrypted request.",
+    },
+    {
+      q: "Your site works in Chrome, but your Node.js service gets `UNABLE_TO_VERIFY_LEAF_SIGNATURE` from the same server. The most likely cause?",
+      options: ["Node.js doesn't support TLS 1.3", "The server doesn't send its intermediate certificate", "The certificate has expired", "The firewall blocks Node.js"],
+      answer: 1,
+      why: "Browsers often fetch a missing intermediate themselves; Node.js doesn't. Serve the full chain from the server.",
+    },
+    {
+      q: "Does a certificate for `*.example.com` cover `v2.api.example.com`?",
+      options: ["Yes, wildcards match anything", "No, a wildcard matches exactly one level", "Only if the server allows it", "Only over HTTP/2"],
+      answer: 1,
+      why: "The * stands for one label. It covers api.example.com, not v2.api.example.com, and not example.com itself.",
+    },
+    {
+      q: "Chrome shows `ERR_SSL_PROTOCOL_ERROR` for `https://localhost:3000`. What's the most likely cause?",
+      options: ["The certificate expired", "The dev server speaks plain HTTP on that port", "DNS failed", "The server is down"],
+      answer: 1,
+      why: "The browser started a TLS handshake and got back something that isn't TLS. Use http://, or set up HTTPS on the dev server.",
+    },
+    {
+      q: "Behind a load balancer with a 60-second idle timeout, which Node.js setting avoids random 502s?",
+      options: ["server.keepAliveTimeout = 5000", "server.keepAliveTimeout = 65000", "server.timeout = 0", "NODE_TLS_REJECT_UNAUTHORIZED=0"],
+      answer: 1,
+      why: "The server must keep idle connections longer than the load balancer, so the load balancer is always the side that closes first.",
+    },
+    {
+      q: "How does a browser find out that a server supports HTTP/3?",
+      options: ["It tries UDP first every time", "From an `alt-svc` header on an earlier response", "From the certificate", "DNS always tells it"],
+      answer: 1,
+      why: "The server advertises HTTP/3 with alt-svc (for example h3=\":443\"), so a first visit usually starts over TCP and later ones switch.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="Walk me through what happens between connecting to an HTTPS server and sending the first request.">
+TCP's three-way handshake first: the client sends SYN with its initial sequence number, the server replies SYN-ACK with its own, the client ACKs. That's one round trip. Then TLS: the ClientHello offers versions and ciphers and names the server (SNI); in TLS 1.3 it also carries the client's key share. The server replies with its key share, its certificate, a signature proving it owns the certificate's key, and Finished, all but the first part encrypted. The client verifies the certificate chain and name, sends Finished, and can send the HTTP request in the same flight. So TLS 1.3 adds one round trip, and the request itself takes one more: three before the first byte.
+</Question>
+<Question q="Why is the TCP handshake three messages and not two?">
+Each side must learn the other's initial sequence number and know its own was received. SYN carries the client's number; SYN-ACK acknowledges it and carries the server's; the final ACK tells the server its number arrived. With two messages, the server could never be sure. It also protects against old, delayed SYNs from earlier connections opening a new one by accident.
+</Question>
+<Question q="What does HTTPS protect, and what does it leave visible?">
+It encrypts the HTTP request and response: method, path, query string, headers, cookies and bodies, and it proves the server's identity. It does not hide the server's IP address, the hostname in the SNI field of the ClientHello (unless Encrypted Client Hello is used), plaintext DNS lookups, or the size and timing of traffic. In TLS 1.2 the server's certificate is visible too; TLS 1.3 encrypts it.
+</Question>
+<Question q="How does a client decide whether to trust a server's certificate?">
+It checks that the certificate covers the hostname it connected to (subject alternative names, with wildcards matching one label), that it's within its validity dates, and that it chains up through intermediate certificates to a root certificate authority in the client's trust store, with every signature valid. It also confirms the server owns the matching private key, by its signature during the handshake. Browsers may fetch a missing intermediate; most server-side clients won't.
+</Question>
+<Question q="Your service intermittently gets 502s from the load balancer, especially at low traffic. What do you suspect?">
+An idle-timeout mismatch on kept-alive connections between the load balancer and the backend. If the backend closes idle connections sooner than the load balancer (Node.js defaults to 5 seconds; many load balancers to 60), the load balancer can send a request down a connection the backend has just closed, and returns a 502. Low traffic makes connections sit idle, so it happens more. Fix: set the backend's keep-alive timeout longer than the load balancer's idle timeout, and confirm with load balancer logs.
+</Question>
+<Question q="Why is TLS 1.3 faster than TLS 1.2, and what is 0-RTT?">
+TLS 1.3 dropped the separate key-exchange round trip: the client guesses the key-exchange group and sends its key share in the ClientHello, so the handshake completes in one round trip instead of two. It also removed old, weak ciphers. With 0-RTT, a client resuming a recent session can send application data in its first flight. That data isn't protected against replay, so it should only be accepted for idempotent requests, and many servers disable it.
+</Question>
+<Question q="A teammate fixes 'self-signed certificate in certificate chain' with NODE_TLS_REJECT_UNAUTHORIZED=0. What do you say?">
+That it disables certificate verification for every TLS connection in that process, so anyone in the middle could impersonate any server, including the database or payment provider. The usual cause is a company TLS-inspection proxy or an internal certificate authority. The fix is to trust that specific root: NODE_EXTRA_CA_CERTS pointing at its PEM file, or running Node.js with --use-system-ca so it trusts the operating system's store.
+</Question>
+<Question q="How do HTTP/2 and HTTP/3 change connection costs?">
+HTTP/1.1 handles one request at a time per connection, so browsers open up to six per host, each paying for TCP and TLS. HTTP/2 multiplexes many requests over one connection, paying once. HTTP/3 runs over QUIC on UDP, which combines transport and TLS 1.3 setup into one round trip and avoids TCP's head-of-line blocking when a packet is lost. Browsers discover HTTP/3 through the alt-svc header, so the first visit usually uses TCP.
+</Question>
+</Interview>
+
+## What's next
+
+The connection is open and private. Now the request finally goes out, and it's more than a method and a URL: a stack of headers that the browser, the CDN, the load balancer and your server each read and act on. That's the next post this week: **HTTP Headers: The Conversation Inside Every Request**.
+
+### Sources and further reading
+
+- RFC 9293: [Transmission Control Protocol](https://www.rfc-editor.org/rfc/rfc9293)
+- RFC 8446: [The TLS Protocol Version 1.3](https://www.rfc-editor.org/rfc/rfc8446), including section 8 on 0-RTT and replay
+- RFC 9000: [QUIC](https://www.rfc-editor.org/rfc/rfc9000), and RFC 9001: [Using TLS to Secure QUIC](https://www.rfc-editor.org/rfc/rfc9001)
+- RFC 7838: [HTTP Alternative Services](https://www.rfc-editor.org/rfc/rfc7838)
+- MDN Web Docs: [Transport Layer Security](https://developer.mozilla.org/en-US/docs/Web/Security/Transport_Layer_Security)
+- Node.js docs: [server.keepAliveTimeout](https://nodejs.org/api/http.html#serverkeepalivetimeout) and [NODE_EXTRA_CA_CERTS](https://nodejs.org/api/cli.html#node_extra_ca_certsfile)
+- AWS docs: [Application Load Balancer connection idle timeout](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/application-load-balancers.html#connection-idle-timeout)
+- [badssl.com](https://badssl.com/): broken certificates on purpose, for testing clients

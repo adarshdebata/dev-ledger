@@ -55,7 +55,7 @@ export const weeks: Week[] = [
     days: [
       { day: 1, title: "One Request, Seven Stops: What Happens After You Press Enter", slug: "one-request-seven-stops" },
       { day: 2, title: "DNS: How a Name Becomes an Address (and When It Lies)", slug: "dns-how-a-name-becomes-an-address" },
-      { day: 3, title: "TCP & TLS: The Handshakes Before Your First Byte" },
+      { day: 3, title: "TCP & TLS: The Handshakes Before Your First Byte", slug: "tcp-and-tls-handshakes" },
       { day: 4, title: "HTTP Headers: The Conversation Inside Every Request" },
       { day: 5, title: "Your Browser Just Blocked Your Request. Why?", slug: "your-browser-blocked-your-request" },
       { day: 6, title: "You Installed Helmet. What Did It Actually Change?", slug: "you-installed-helmet" },
