@@ -1,0 +1,315 @@
+---
+title: "127.0.0.1 vs 0.0.0.0: Why It Works Locally but Not in Docker"
+subtitle: "Your server listens on a port, but also on an address, and that address decides who can reach it. Here's why the same app works on your laptop and fails in a container."
+date: 2026-10-25
+series: 1
+roadmap: [28, 29, 30, 40]
+tags: [networking, docker, nodejs, debugging, localhost]
+author: adarshdebata
+thumb: ports
+summary: "A server doesn't just listen on a port; it listens on a port at an address. 127.0.0.1 lets in only the machine itself, 0.0.0.0 lets in every network the machine is on. That one choice is why apps work on your laptop and fail in Docker, why your phone can't open your dev server, and why a container can't find the database on your laptop."
+---
+
+**You use it every day. But do you actually know what happens underneath?** Every post this week has followed one request from the browser to a server. This last one looks at the very end of that trip: the moment a connection arrives at a machine and has to find the program that's waiting for it.
+
+You've written this line a hundred times:
+
+```js
+app.listen(3000);
+```
+
+Port 3000, sure. But **listening where?** A machine has more than one address, and a server only hears the connections that arrive on the addresses it chose. Get that wrong and you get the most famous "works on my machine" bug of all.
+
+## What you see
+
+The app runs. Its logs say `Listening on port 3000`. And yet:
+
+- **It works on your laptop and fails in Docker.** The container is running, the port is mapped, and the browser says:
+
+<DevTools console={[{ level: "error", text: "GET http://localhost:3000/ net::ERR_EMPTY_RESPONSE" }]} />
+
+- **Your phone can't open your dev server** on the same Wi-Fi: `ERR_CONNECTION_REFUSED`.
+- **The app in a container can't reach the database on your laptop:** `connect ECONNREFUSED 127.0.0.1:5432`, though `psql` on your laptop connects fine.
+- **The server won't start:** `listen EADDRINUSE: address already in use 127.0.0.1:3000`.
+
+We reproduced every one of those, with Node.js 24, Docker Desktop and Chrome. Before reading on, take a guess:
+
+<Predict
+  question="Inside a container, a Node.js server listens on 127.0.0.1:3000. You run docker run -p 3000:3000 and open localhost:3000 on your laptop. What happens?"
+  options={[
+    "It works: the port is mapped",
+    "The browser gets an empty response: Docker forwards the connection, but nothing is listening where it arrives",
+    "Docker refuses to start the container",
+    "It works, but slowly",
+  ]}
+  answer={1}
+>
+**An empty response.** We tried it: Chrome showed `ERR_EMPTY_RESPONSE` and curl said `(52) Empty reply from server`. Docker forwards the connection to the container's own network address, not to its 127.0.0.1, so the server never hears it. The rest of this post is about why.
+</Predict>
+
+## What's underneath
+
+### A machine has more than one address
+
+Every machine is connected to several networks at once, each through a <Term id="network-interface">network interface</Term> with its own address:
+
+- **The <Term id="loopback">loopback</Term>**, `127.0.0.1` (and `::1` in IPv6). A network that never leaves the machine. Whichever machine you ask, it means "me".
+- **Your Wi-Fi or Ethernet**, with an address like `192.168.1.20` on your home network.
+- Often more: a VPN, a virtual network for WSL or Docker.
+
+A connection always arrives on **one** of these. Your phone reaches your laptop through the Wi-Fi interface; your laptop's own browser, going to `localhost`, through the loopback.
+
+### Listening means choosing which doors to open
+
+When a server starts, it tells the operating system: "send me connections for port 3000 *that arrive on this address*". That's the second argument of `listen()`:
+
+```js title="server.js"
+server.listen(3000, "127.0.0.1"); // only connections that arrive on the loopback
+server.listen(3000, "0.0.0.0");   // connections on every IPv4 interface
+server.listen(3000);              // Node.js default: every interface, IPv4 and IPv6
+```
+
+<Term id="unspecified-address">0.0.0.0</Term> isn't a real address you can connect to. As a listening address it means "every interface I have". We checked what each choice actually does on a laptop, connecting through the loopback and through the Wi-Fi address:
+
+```text title="Node.js 24 on Windows (real output)"
+listening on 127.0.0.1   via 127.0.0.1: 200    via Wi-Fi address: ECONNREFUSED
+listening on 0.0.0.0     via 127.0.0.1: 200    via Wi-Fi address: 200
+listen(3000), no host    → address "::"         via Wi-Fi address: 200
+```
+
+The operating system shows the same thing. Its list of listening sockets has a **Local Address** column, and that column is the whole story:
+
+```text title="netstat -tln inside a container (real output)"
+Proto Recv-Q Send-Q Local Address     Foreign Address   State
+tcp        0      0 127.0.0.1:3000    0.0.0.0:*         LISTEN
+tcp        0      0 0.0.0.0:4000      0.0.0.0:*         LISTEN
+```
+
+Port 3000 only answers from inside that machine. Port 4000 answers anyone who can reach it.
+
+### Now put the app in a container
+
+A container gets **its own network**: its own loopback, its own interfaces, and its own address, such as `172.17.0.2`. Its `127.0.0.1` is the container, not your laptop. And `docker run -p 3000:3000` (<Term id="port-publishing">publishing a port</Term>) doesn't magically connect the two loopbacks. It listens on your laptop's port 3000 and forwards each connection to port 3000 **on the container's own address**.
+
+So a server inside the container listening on `127.0.0.1` is like a shop with the front door locked and only the back room open. Docker knocks on the front door. Press **Next** to send connections, and switch the listening address at any step:
+
+<BindMap />
+
+That's why the error is an *empty response* and not *connection refused*. Docker's side of the connection, on your laptop, accepted it fine. It was the hop inside the container that found nobody listening, so Docker closed the connection without a reply. **An empty reply from a published port almost always means the app inside is listening on 127.0.0.1.**
+
+<Predict
+  question="Your app runs in a container and connects to Postgres at localhost:5432. Postgres runs on your laptop. What happens?"
+  options={[
+    "It connects: localhost is your laptop",
+    "ECONNREFUSED: inside the container, localhost is the container itself",
+    "It connects, but only with -p 5432:5432",
+    "Postgres rejects the password",
+  ]}
+  answer={1}
+>
+**ECONNREFUSED.** From inside the container, `localhost` is the container, and there's no Postgres in it. We got `Connection refused` doing exactly this. On Docker Desktop, the name `host.docker.internal` reaches your laptop instead; in Docker Compose, you'd put the database in its own service and connect by the service's name.
+</Predict>
+
+### localhost isn't always 127.0.0.1
+
+One more trap. `localhost` is a *name*, and on many machines it resolves to the IPv6 loopback first. On our Windows laptop, Node.js got `::1` first and `127.0.0.1` second. That matters because the two loopbacks are separate doors:
+
+- A server listening on `0.0.0.0` (IPv4 only) refused a connection to `[::1]:3000`.
+- A server listening on `::1` refused a connection to `127.0.0.1:3000`.
+
+Modern clients try the next address when the first fails, which is why `localhost` usually still works. Clients that don't, Node.js before version 20 among them, fail with `connect ECONNREFUSED ::1:3000` while the server is plainly running.
+
+And one such client is probably in your Dockerfile. Inside the `node:24-alpine` image, `localhost` also resolved to `::1` first. Against a server listening on `0.0.0.0`, Node's own `fetch('http://localhost:3001/')` fell back to IPv4 and worked, but BusyBox `wget http://localhost:3001/`, the tool most Alpine health checks use, didn't: `Connection refused`. The app was fine; the health check would have marked it broken.
+
+### Different tools, different defaults
+
+Whether your dev server can be reached from your phone depends on a default you probably never chose:
+
+| Started with | Listens on | Reachable from your phone? |
+| --- | --- | --- |
+| `server.listen(3000)` in Node.js | `::` (every interface) | Yes, if the firewall allows |
+| `next dev` | `0.0.0.0` (its documented default) | Yes, if the firewall allows |
+| `vite` | `localhost` (its documented default) | No: use `vite --host` |
+| `server.listen(3000, "127.0.0.1")` | the loopback only | No |
+
+None of these is wrong. Listening only on the loopback is the safer default for a laptop on café Wi-Fi; listening everywhere is what a container needs.
+
+<Callout type="insight" title="Two servers on one port">
+On Linux, a second server on a port that's already taken fails with `EADDRINUSE`, even if the two chose different addresses. On Windows, we started one server on `0.0.0.0:9340` and a second on `127.0.0.1:9340`, and **both started**. Connections to `127.0.0.1` reached the second; connections to the Wi-Fi address reached the first. So an old dev server you forgot about can keep answering your phone while your laptop's browser talks to the new one. If the two disagree, check for a second listener before you check your code.
+</Callout>
+
+## What breaks
+
+| What you see | What's really happening | Fix |
+| --- | --- | --- |
+| `ERR_EMPTY_RESPONSE`, or curl `(52) Empty reply from server`, on a published port | The app in the container listens on `127.0.0.1` | Listen on `0.0.0.0` inside containers |
+| `ERR_CONNECTION_REFUSED` from your phone, fine on the laptop | The dev server listens on `localhost` only | `--host` (Vite), or listen on `0.0.0.0` |
+| `ECONNREFUSED 127.0.0.1:5432` from inside a container | `localhost` is the container itself | `host.docker.internal` on Docker Desktop, or a Compose service name |
+| `connect ECONNREFUSED ::1:3000` | `localhost` resolved to IPv6, the server only listens on IPv4 | Connect to `127.0.0.1`, or listen on both |
+| A `HEALTHCHECK` with `wget http://localhost:3000` fails in Alpine, though the app works | `localhost` is `::1` first there, and BusyBox `wget` doesn't try IPv4 | Use `http://127.0.0.1:3000` in health checks |
+| `listen EADDRINUSE: address already in use` | Another process already listens on that port | Find it (field notes) and stop it, or use another port |
+| A database in Docker is reachable from the whole office network | `-p 5432:5432` publishes on every interface of your laptop | `-p 127.0.0.1:5432:5432` |
+| Your phone and your laptop see different versions of the app | Two servers on one port, on different addresses (Windows) | Look for a second listener |
+
+That database row surprises people. We checked: `docker port` showed a plain `-p` mapping published on `0.0.0.0` and `[::]`, and the app answered on the laptop's Wi-Fi address too. With `-p 127.0.0.1:3003:3000`, the Wi-Fi address got nothing. On Linux it's worse: Docker's own documentation warns that ports it publishes bypass `ufw` firewall rules.
+
+<Callout type="story" title="Think of it like this">
+A building has a front door on the street and a back door into the courtyard. "Listening on 127.0.0.1" is staffing only the back door: perfect for people already inside, useless for visitors. A container is a building inside the building, with its own doors, and Docker's port mapping always walks visitors to its front door.
+</Callout>
+
+## Field notes: debugging "can't connect"
+
+<Steps>
+<Step title="Ask the operating system who is listening, and where">
+The **Local Address** column tells you everything:
+
+```text title="Windows: netstat -ano | findstr :4000 (real output)"
+TCP    0.0.0.0:4000     0.0.0.0:0     LISTENING     20352
+```
+
+The last number is the process ID; `tasklist /fi "pid eq 20352"` names it. On Linux use `ss -ltnp`, on macOS `lsof -iTCP:3000 -sTCP:LISTEN`. `127.0.0.1:3000` means loopback only; `0.0.0.0:3000` or `[::]:3000` means every interface. The same command finds whoever is causing `EADDRINUSE`.
+</Step>
+<Step title="Look inside the container">
+`docker exec <container> netstat -tln` shows the container's own listeners (the Alpine-based Node.js images include it). If it says `127.0.0.1:3000`, you've found the bug without reading any code.
+</Step>
+<Step title="Test from the inside out">
+First from inside the container: `docker exec <container> wget -qO- http://127.0.0.1:3000/`. (Use the address, not `localhost`: see the IPv6 trap above.) If that works but your laptop doesn't, it's the listening address or the port mapping, not the app.
+</Step>
+<Step title="Check what Docker actually published">
+`docker port <container>` lists the mappings, with the host addresses they listen on:
+
+```text title="docker port (real output)"
+3000/tcp -> 0.0.0.0:3001
+3000/tcp -> [::]:3001
+```
+</Step>
+<Step title="Read the error: it says how far you got">
+**Refused**: you reached the machine and nothing listens on that address and port. **Empty reply**: something accepted the connection (often Docker's forwarding) and the next hop failed. **Timed out**: nothing answered at all, usually a firewall or the wrong address.
+</Step>
+<Step title="Make the address configurable">
+Read it from the environment, so the same code is safe on a laptop and correct in a container:
+
+```js title="server.js"
+const host = process.env.HOST ?? "127.0.0.1";
+app.listen(3000, host); // HOST=0.0.0.0 in the Dockerfile
+```
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"0.0.0.0 is an address I can open."** It's an instruction for listening: "every interface". To connect, use `localhost`, `127.0.0.1` or a real address.
+
+**"localhost and 127.0.0.1 are the same."** `localhost` is a name, and it often resolves to the IPv6 `::1` first. A server listening only on one loopback won't hear the other.
+
+**"Listening on 0.0.0.0 in a container exposes it to the internet."** Inside a container, `0.0.0.0` means the container's own interfaces. Only `-p` makes it reachable from outside, and `-p` without an address publishes on every interface of the host, which is the part to worry about.
+
+**"EXPOSE in a Dockerfile publishes the port."** `EXPOSE` is documentation for whoever runs the image. Only `-p` (or `ports:` in Compose) publishes anything.
+
+**"localhost inside a container is my laptop."** It's the container. Your laptop is a different machine as far as the container can tell.
+
+## Summary
+
+<FiveQuestions
+  problem="A machine is on several networks at once. A server has to say which of them it accepts connections from: only the machine itself, or everyone who can reach it."
+  sees="`ERR_EMPTY_RESPONSE` or curl's `(52) Empty reply from server` from a container, `ERR_CONNECTION_REFUSED` from your phone, `ECONNREFUSED 127.0.0.1:5432` from a container, `ECONNREFUSED ::1:3000`, health checks that fail on a healthy app, and `EADDRINUSE`."
+  underneath="Every connection arrives on one network interface. A server listening on 127.0.0.1 only hears the loopback; 0.0.0.0 hears every interface. A container has its own interfaces and loopback, and Docker's -p forwards connections to the container's own address, never its loopback."
+  breaks="Apps bound to 127.0.0.1 inside containers, dev servers your phone can't reach, containers calling localhost for services on the host, IPv4 and IPv6 loopbacks mixed up, ports already in use, and -p publishing databases to the whole network."
+  misconception="That 0.0.0.0 is an address you can open, that localhost always means 127.0.0.1, that 0.0.0.0 in a container exposes it to the internet, that EXPOSE publishes a port, and that localhost in a container is your laptop."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "A server listens on 127.0.0.1:3000. Who can connect to it?",
+      options: ["Anyone on the internet", "Anyone on the same Wi-Fi", "Only programs on the same machine", "Only the browser"],
+      answer: 2,
+      why: "127.0.0.1 is the loopback: connections can only arrive on it from the machine itself.",
+    },
+    {
+      q: "What does listening on 0.0.0.0 mean?",
+      options: ["Listen on an invalid address", "Listen on every IPv4 interface of this machine", "Listen only on the loopback", "Listen on the internet's public address"],
+      answer: 1,
+      why: "As a listening address, 0.0.0.0 means every interface the machine has.",
+    },
+    {
+      q: "An app in a container listens on 127.0.0.1:3000 and runs with -p 3000:3000. What does your browser get at localhost:3000?",
+      options: ["The page", "ERR_CONNECTION_REFUSED", "ERR_EMPTY_RESPONSE", "A 404"],
+      answer: 2,
+      why: "Docker accepts the connection on the host and forwards it to the container's own address, where nothing listens, so the reply is empty.",
+    },
+    {
+      q: "Inside a container, your app connects to localhost:5432, and Postgres runs on your laptop. Why does it fail?",
+      options: ["Postgres needs a password", "Inside the container, localhost is the container itself", "Port 5432 is blocked by Docker", "The database is too slow"],
+      answer: 1,
+      why: "Each container has its own loopback. On Docker Desktop, host.docker.internal reaches the host instead.",
+    },
+    {
+      q: "Your phone can't open your Vite dev server at 192.168.1.20:5173, but your laptop can. The likely fix?",
+      options: ["Restart the phone", "Run vite --host so it listens on all interfaces", "Use https", "Clear the browser cache"],
+      answer: 1,
+      why: "Vite listens on localhost by default. --host makes it listen on every interface, including Wi-Fi.",
+    },
+    {
+      q: "What does `-p 127.0.0.1:5432:5432` change compared with `-p 5432:5432`?",
+      options: ["Nothing", "The database is published only on the host's loopback, not on its Wi-Fi or other networks", "The container listens on 127.0.0.1", "It makes the database faster"],
+      answer: 1,
+      why: "Without an address, -p publishes on every interface of the host. With 127.0.0.1, only the host itself can connect.",
+    },
+    {
+      q: "A client gets `connect ECONNREFUSED ::1:3000`, but the server is running. Why?",
+      options: ["The server crashed", "localhost resolved to the IPv6 loopback, and the server only listens on IPv4", "Port 3000 is blocked", "The client is offline"],
+      answer: 1,
+      why: "::1 and 127.0.0.1 are separate loopbacks. A server on 0.0.0.0 or 127.0.0.1 doesn't hear ::1.",
+    },
+    {
+      q: "Does `EXPOSE 3000` in a Dockerfile make the app reachable from your laptop?",
+      options: ["Yes, always", "No, it only documents the port; -p or ports: publishes it", "Only in production", "Only with Compose"],
+      answer: 1,
+      why: "EXPOSE is metadata. Publishing needs -p on docker run, or ports: in Compose.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="What's the difference between 127.0.0.1, 0.0.0.0 and localhost?">
+127.0.0.1 is the IPv4 loopback address: traffic to it never leaves the machine, and a server listening on it only accepts local connections. 0.0.0.0 is the unspecified address: as a listening address it means all IPv4 interfaces, but it isn't a destination you connect to. localhost is a hostname that resolves to a loopback address, often ::1 (IPv6) first and then 127.0.0.1, so it can behave differently from 127.0.0.1 when a server listens on only one of them.
+</Question>
+<Question q="An app works locally but isn't reachable when you run it in Docker with -p 3000:3000. How do you debug it?">
+Check the listening address inside the container with netstat or ss: if it's 127.0.0.1, Docker's forwarded connections, which arrive on the container's eth0 address, are never heard. Confirm with curl from inside the container (works) versus from the host (empty reply). Fix by listening on 0.0.0.0, ideally through a HOST environment variable. Also check docker port for the mapping, that the container port matches the app's port, and that the app actually started.
+</Question>
+<Question q="How does a container reach a service running on the host machine?">
+Not through localhost, which is the container itself. On Docker Desktop, use host.docker.internal; on Linux Docker Engine, add it with --add-host=host.docker.internal:host-gateway, and the host service must listen on an interface the container's network can reach. Better, for development stacks, run the dependency as another service in the same Docker network and connect by its service name.
+</Question>
+<Question q="What does -p 8080:80 do, and what are the security implications?">
+Docker listens on port 8080 of the host, on every host interface unless an address is given, and forwards each connection to port 80 on the container's own address. So the service becomes reachable from any network the host is on, not just the host itself. For anything that should stay local, such as databases or admin tools, publish on the loopback: -p 127.0.0.1:8080:80. On Linux, Docker's published ports also bypass ufw rules.
+</Question>
+<Question q="You get EADDRINUSE when starting a server. What do you do?">
+Find what's listening on that port: netstat -ano with findstr on Windows, ss -ltnp on Linux, lsof -iTCP:PORT -sTCP:LISTEN on macOS. Identify the process by its ID: often an old instance of the same app, another dev server, or a container with a published port. Stop it, or run on another port. Remember that the listener might be on a different address than yours, and that on Windows two servers can share a port on different addresses.
+</Question>
+<Question q="Why might localhost:3000 fail while 127.0.0.1:3000 works?">
+localhost can resolve to ::1 first. If the server listens only on 127.0.0.1 or 0.0.0.0 (IPv4), the IPv6 connection is refused. Clients with Happy Eyeballs-style fallback try 127.0.0.1 next and succeed; others, such as Node.js before version 20, fail with ECONNREFUSED ::1. Fix by connecting to 127.0.0.1 explicitly or making the server listen on both families.
+</Question>
+<Question q="Is it a security risk to bind a server to 0.0.0.0?">
+On a laptop or server with a public or shared network, yes: anyone who can reach any of its interfaces can try to connect, so an unauthenticated dev server or database becomes reachable from the café Wi-Fi or office network. Inside a container it's normal and needed, because the container's network is isolated and only published ports are reachable. The real control is what you publish and on which host address, plus firewalls.
+</Question>
+</Interview>
+
+## What's next
+
+That's the end of **Week 1: The Request You Never See**. You've followed one request through every stop: the [seven bars](/posts/one-request-seven-stops/), [DNS](/posts/dns-how-a-name-becomes-an-address/), [the handshakes](/posts/tcp-and-tls-handshakes/), [the headers](/posts/http-headers-the-conversation/), [CORS](/posts/your-browser-blocked-your-request/), [Helmet](/posts/you-installed-helmet/), and now the address your server listens on.
+
+Next week: **Things We Install Without Understanding**, starting with the tools you run every day without a second thought: npm, pnpm, and what's really inside `node_modules`. And in the week after, containers get a whole series of their own.
+
+### Sources and further reading
+
+- Node.js docs: [server.listen()](https://nodejs.org/api/net.html#serverlistenport-host-backlog-callback), including the default host
+- Docker docs: [Port publishing and mapping](https://docs.docker.com/engine/network/port-publishing/), and [Docker and ufw](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw)
+- Docker docs: [Dockerfile EXPOSE](https://docs.docker.com/reference/dockerfile/#expose)
+- Docker Desktop docs: [Connect from a container to a service on the host](https://docs.docker.com/desktop/features/networking/#i-want-to-connect-from-a-container-to-a-service-on-the-host)
+- Vite docs: [server.host](https://vite.dev/config/server-options#server-host)
+- RFC 1122: [Requirements for Internet Hosts](https://www.rfc-editor.org/rfc/rfc1122), where 127.0.0.0/8 is defined as loopback

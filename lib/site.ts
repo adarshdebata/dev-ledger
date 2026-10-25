@@ -59,7 +59,7 @@ export const weeks: Week[] = [
       { day: 4, title: "HTTP Headers: The Conversation Inside Every Request", slug: "http-headers-the-conversation" },
       { day: 5, title: "Your Browser Just Blocked Your Request. Why?", slug: "your-browser-blocked-your-request" },
       { day: 6, title: "You Installed Helmet. What Did It Actually Change?", slug: "you-installed-helmet" },
-      { day: 7, title: "127.0.0.1 vs 0.0.0.0: Why It Works Locally but Not in Docker" },
+      { day: 7, title: "127.0.0.1 vs 0.0.0.0: Why It Works Locally but Not in Docker", slug: "127-0-0-1-vs-0-0-0-0" },
     ],
   },
 ];
