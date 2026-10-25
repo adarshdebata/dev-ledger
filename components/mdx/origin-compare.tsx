@@ -94,9 +94,9 @@ export function OriginCompare() {
                         differs ? "border-bad/50 bg-bad-tint text-bad" : "border-ok/40 bg-ok-tint text-ok"
                       }`}
                     >
-                      <span className="text-[10px] tracking-wide uppercase opacity-70">{part.label}</span>
+                      <span className="text-[10px] tracking-wide uppercase">{part.label}</span>
                       {p[part.key]}
-                      {part.key === "port" && p.defaultPort && <span className="text-[10px] opacity-70">(default)</span>}
+                      {part.key === "port" && p.defaultPort && <span className="text-[10px]">(default)</span>}
                     </span>
                   );
                 })

@@ -127,7 +127,7 @@ export function Predict({
             >
               <span
                 className={`grid size-6 shrink-0 place-items-center rounded-full border font-mono text-xs ${
-                  state === "right" ? "border-ok bg-ok text-white" : state === "wrong" ? "border-bad bg-bad text-white" : "border-line-strong text-subtle"
+                  state === "right" ? "border-ok bg-ok text-bg" : state === "wrong" ? "border-bad bg-bad text-bg" : "border-line-strong text-subtle"
                 }`}
               >
                 {state === "right" ? <Check className="size-3.5" /> : state === "wrong" ? <X className="size-3.5" /> : String.fromCharCode(65 + i)}

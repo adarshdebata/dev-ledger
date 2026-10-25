@@ -465,7 +465,6 @@ html { scroll-padding-top: 6rem; }
 .code-block .line.diff.remove {
   background: var(--bad-tint);
   border-left-color: var(--bad);
-  opacity: 0.75;
 }
 
 .code-block .line.diff.add::before { content: "+"; position: absolute; margin-left: -0.85rem; color: var(--ok); }

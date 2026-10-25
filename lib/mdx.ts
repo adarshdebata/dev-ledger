@@ -29,6 +29,49 @@ const transformerFenceMeta: ShikiTransformer = {
   },
 };
 
+const luminance = (hex: string) => {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contrast = (a: string, b: string) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+const mix = (hex: string, to: number, t: number) =>
+  "#" + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - t) + to * t).toString(16).padStart(2, "0")).join("");
+
+/** Nudges a token colour towards black (light theme) or white (dark theme) until it reads at 4.5:1 on every background. */
+function readable(hex: string, bgs: string[], towards: 0 | 255) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return hex;
+  for (let t = 0; t <= 1; t += 0.04) {
+    const c = mix(hex, towards, t);
+    if (bgs.every((bg) => contrast(c, bg) >= 4.5)) return c;
+  }
+  return hex;
+}
+
+/**
+ * The vitesse themes have a few soft token colours (comments, numbers) below WCAG AA on our code
+ * backgrounds, and some are see-through. Each one becomes opaque and is checked against the plain,
+ * highlighted and diff line colours of each theme.
+ */
+const LIGHT_BGS = ["#eef1f5", "#dce2ea", "#ebe6e7", "#e3ebe8", "#ece5e9"];
+const DARK_BGS = ["#0f1726", "#1e2a42", "#2b2731", "#17283a", "#2a2236"];
+
+const transformerReadableColors: ShikiTransformer = {
+  name: "readable-colors",
+  span(node) {
+    const style = node.properties.style;
+    if (typeof style !== "string") return;
+    node.properties.style = style
+      .replace(/--shiki-light:(#[0-9a-fA-F]{6})(?:[0-9a-fA-F]{2})?/, (_, c: string) => `--shiki-light:${readable(c, LIGHT_BGS, 0)}`)
+      .replace(/--shiki-dark:(#[0-9a-fA-F]{6})(?:[0-9a-fA-F]{2})?/, (_, c: string) => `--shiki-dark:${readable(c, DARK_BGS, 255)}`);
+  },
+};
+
 export async function renderMdx(source: string) {
   const toc: TocItem[] = [];
   const collectToc = () => (tree: Root) => {
@@ -57,6 +100,7 @@ export async function renderMdx(source: string) {
             transformerMetaHighlight(),
             transformerNotationHighlight(),
             transformerNotationDiff(),
+            transformerReadableColors,
           ],
         },
       ],

@@ -9,11 +9,11 @@ import { PlayerControls, useStepPlayer } from "./step-player";
 const ICONS: LucideIcon[] = [AppWindow, Laptop, Router, Network, Layers, BadgeCheck];
 
 const CHIP: Record<Hop["kind"], string> = {
-  ask: "border-accent-soft bg-accent-soft text-white",
-  answer: "border-ok bg-ok text-white",
+  ask: "border-accent bg-accent text-bg",
+  answer: "border-ok bg-ok text-bg",
   check: "border-line-strong bg-card text-muted",
-  bad: "border-bad bg-bad text-white",
-  fix: "border-teal bg-teal text-white",
+  bad: "border-bad bg-bad text-bg",
+  fix: "border-teal bg-teal text-bg",
 };
 
 const x = (i: number) => ((i + 0.5) / STOPS.length) * 100;

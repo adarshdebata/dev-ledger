@@ -37,12 +37,12 @@ export default function RequestJourney() {
   const chip = !current
     ? { text: "Enter ↵", cls: "border-line-strong bg-card text-muted" }
     : failed
-      ? { text: "failed", cls: "border-bad bg-bad text-white" }
+      ? { text: "failed", cls: "border-bad bg-bad text-bg" }
       : brokenStop
-        ? { text: "slow…", cls: "border-warn bg-warn text-white" }
+        ? { text: "slow…", cls: "border-warn bg-warn text-bg" }
         : done
-          ? { text: "200 OK", cls: "border-ok bg-ok text-white" }
-          : { text: "GET /orders", cls: "border-accent-soft bg-accent-soft text-white" };
+          ? { text: "200 OK", cls: "border-ok bg-ok text-bg" }
+          : { text: "GET /orders", cls: "border-accent bg-accent text-bg" };
 
   const x = (n: number) => ((n - 0.5) / STOPS.length) * 100;
 
@@ -119,12 +119,12 @@ export default function RequestJourney() {
                   <span className={`relative grid size-11 place-items-center rounded-full border-2 transition-colors duration-300 ${ring}`}>
                     <Icon className="size-[18px]" />
                     {passed && (
-                      <span className="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-ok text-white">
+                      <span className="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-ok text-bg">
                         <Check className="size-2.5" strokeWidth={3.5} />
                       </span>
                     )}
                     {isCurrent && failed && (
-                      <span className="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-bad text-white">
+                      <span className="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-bad text-bg">
                         <X className="size-2.5" strokeWidth={3.5} />
                       </span>
                     )}
