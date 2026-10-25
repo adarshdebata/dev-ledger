@@ -12,6 +12,7 @@ export function thumbFor(post: Pick<PostMeta, "thumb" | "tags">): Motif {
   if (post.tags.includes("cors")) return "origins";
   if (post.tags.includes("security")) return "shield";
   if (post.tags.includes("ids")) return "ids";
+  if (post.tags.includes("tls")) return "handshake";
   return "journey";
 }
 
@@ -130,6 +131,31 @@ const MOTIFS: Record<Motif, React.ReactNode> = {
       ))}
       <rect x="19.9" y="84" width="64" height="5" rx="2.5" className="fill-line-strong" />
       <rect x="19.9" y="93" width="40" height="5" rx="2.5" className="fill-line" />
+    </>
+  ),
+  // Browser and server lifelines; three messages cross before the padlock closes.
+  handshake: (
+    <>
+      {[30, 130].map((x) => (
+        <g key={x}>
+          <rect x={x - 14} y="10" width="28" height="11" rx="5.5" strokeWidth="1.5" className="fill-card stroke-line-strong" />
+          <line x1={x} y1="21" x2={x} y2="94" strokeWidth="1.5" className="stroke-line-strong" />
+        </g>
+      ))}
+      {(
+        [
+          [30, 30, 130, 42, "stroke-teal-soft"],
+          [130, 46, 30, 58, "stroke-teal-soft"],
+          [30, 62, 130, 74, "stroke-accent-soft"],
+          [130, 78, 30, 90, "stroke-ok"],
+        ] as const
+      ).map(([x1, y1, x2, y2, c], i) => (
+        <path key={i} d={`M${x1} ${y1} L${x2} ${y2}`} strokeWidth="2" strokeLinecap="round" className={`thumb-slide ${c}`} style={{ animationDelay: `${i * 0.16}s` }} />
+      ))}
+      <g className="thumb-pulse">
+        <rect x="73" y="47" width="14" height="11" rx="2.5" className="fill-accent-soft" />
+        <path d="M76 47v-3a4 4 0 0 1 8 0v3" fill="none" strokeWidth="1.8" className="stroke-accent-soft" />
+      </g>
     </>
   ),
   // A project, its packages, and the one shared store they all link into.
