@@ -81,6 +81,11 @@ const Handshake = dynamic(() => import("./handshake-player"), {
   loading: () => <Placeholder label="handshake player" className="h-[38rem]" />,
 });
 
+const Headers = dynamic(() => import("./header-trip-player"), {
+  ssr: false,
+  loading: () => <Placeholder label="header player" className="h-[44rem]" />,
+});
+
 const Ids = dynamic(() => import("./id-machine"), {
   ssr: false,
   loading: () => <Placeholder label="ID player" className="h-[40rem]" />,
@@ -116,6 +121,15 @@ export function HandshakePlayer() {
   return (
     <WhenNear label="handshake player" className="h-[38rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
       <Handshake />
+    </WhenNear>
+  );
+}
+
+/** Only for screens wide enough for it, and only when motion is welcome. */
+export function HeaderTripPlayer() {
+  return (
+    <WhenNear label="header player" className="h-[44rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
+      <Headers />
     </WhenNear>
   );
 }
