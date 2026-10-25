@@ -86,6 +86,11 @@ const Headers = dynamic(() => import("./header-trip-player"), {
   loading: () => <Placeholder label="header player" className="h-[44rem]" />,
 });
 
+const Bind = dynamic(() => import("./bind-player"), {
+  ssr: false,
+  loading: () => <Placeholder label="listening-address player" className="h-[42rem]" />,
+});
+
 const Ids = dynamic(() => import("./id-machine"), {
   ssr: false,
   loading: () => <Placeholder label="ID player" className="h-[40rem]" />,
@@ -130,6 +135,15 @@ export function HeaderTripPlayer() {
   return (
     <WhenNear label="header player" className="h-[44rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
       <Headers />
+    </WhenNear>
+  );
+}
+
+/** Only for screens wide enough for it, and only when motion is welcome. */
+export function BindPlayer() {
+  return (
+    <WhenNear label="listening-address player" className="h-[42rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
+      <Bind />
     </WhenNear>
   );
 }

@@ -2,6 +2,7 @@ import type { MDXComponents } from "mdx/types";
 import { withBase } from "@/lib/site";
 import { Callout, CodeBlock, Compare, DevTools, FiveQuestions, H2, H3, SmartLink, Step, Steps, Table } from "./basics";
 import { CodeTabs, Predict } from "./client-bits";
+import { BindMap } from "./bind";
 import { DnsLookup } from "./dns";
 import { HandshakeTimeline } from "./handshake";
 import { HeaderTrip } from "./header-trip";
@@ -50,6 +51,7 @@ export function mdxComponents(slug: string, section: "posts" | "case-studies" = 
     HelmetLab,
     RequestJourney,
     DnsLookup,
+    BindMap,
     HandshakeTimeline,
     HeaderTrip,
     TimingTab,
