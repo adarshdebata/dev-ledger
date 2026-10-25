@@ -158,6 +158,30 @@ const MOTIFS: Record<Motif, React.ReactNode> = {
       </g>
     </>
   ),
+  // A request's header lines; each stop along the top lights up the lines it reads.
+  headers: (
+    <>
+      {[28, 62, 98, 132].map((x, i) => (
+        <circle key={x} cx={x} cy="16" r="5" strokeWidth="1.5" className={`fill-card ${i === 3 ? "stroke-accent-soft" : "stroke-teal-soft"}`} />
+      ))}
+      <line x1="33" y1="16" x2="127" y2="16" strokeWidth="1.5" strokeDasharray="3 3" className="thumb-flow stroke-line-strong" />
+      <rect x="18" y="30" width="124" height="64" rx="7" strokeWidth="1.5" className="fill-card stroke-line-strong" />
+      {(
+        [
+          [26, "fill-teal-soft", 0],
+          [38, "fill-line-strong", 1],
+          [50, "fill-accent-soft", 2],
+          [62, "fill-line-strong", 3],
+          [74, "fill-ok", 4],
+        ] as const
+      ).map(([w, c, i]) => (
+        <g key={i}>
+          <rect x="28" y={39 + i * 10.5} width={w} height="4" rx="2" className={`thumb-slide ${c}`} style={{ animationDelay: `${i * 0.12}s` }} />
+          <rect x={34 + w} y={39 + i * 10.5} width={70 - w} height="4" rx="2" className="fill-line" />
+        </g>
+      ))}
+    </>
+  ),
   // A project, its packages, and the one shared store they all link into.
   deps: (
     <>
