@@ -283,6 +283,22 @@ export const glossary = {
     term: "Alt-Svc",
     def: "A response header that tells the browser the same site is also available another way, for example over HTTP/3: alt-svc: h3=\":443\".",
   },
+  "x-forwarded-for": {
+    term: "X-Forwarded-For",
+    def: "A request header that proxies use to pass on the client's address. Each proxy appends the address it saw, so it's a list, and its first entry can be faked.",
+  },
+  "hop-by-hop": {
+    term: "Hop-by-hop header",
+    def: "A header that describes one link of the chain, not the request itself, such as Connection. Every proxy removes it and sets its own.",
+  },
+  "cache-control": {
+    term: "Cache-Control",
+    def: "The header that says who may keep a copy of a response and for how long: public, private, max-age=60, no-store and so on.",
+  },
+  etag: {
+    term: "ETag",
+    def: "A version tag on a response. The browser sends it back in If-None-Match, and the server can reply 304 Not Modified instead of the whole body.",
+  },
   "snowflake-id": {
     term: "Snowflake ID",
     def: "A 64-bit number built from the current time, a machine number and a counter. Any server can make one without asking a database, and they sort roughly by time. Twitter made the idea popular.",
