@@ -1,0 +1,297 @@
+---
+title: "HTTP Headers: The Conversation Inside Every Request"
+subtitle: "Your code sets one or two headers. The browser, the CDN and the load balancer add, read and remove the rest. Here's who reads what, and the bugs that hide in between."
+date: 2026-10-25
+series: 1
+roadmap: [6]
+tags: [http, headers, browser, express, debugging]
+author: adarshdebata
+thumb: headers
+summary: "A request is mostly headers, and most of them weren't written by you. The browser adds a dozen, proxies add and strip more, and every hop reads only the few it cares about. Here's who reads which header, why req.body is empty and req.ip is wrong, and how to see what really arrived."
+---
+
+**You use it every day. But do you actually know what happens underneath?** The [last post](/posts/tcp-and-tls-handshakes/) opened a connection and made it private. Now the request finally leaves. You think of it as a method and a URL, maybe a body. On the wire, it's mostly **headers**: lines of `Name: value` that come before the body.
+
+Here's the surprise. In our test, a `fetch()` with no headers at all arrived with fourteen. Your code wrote none of them. And between the browser and your app, each hop reads a few, adds a few, and throws a few away.
+
+## What you see
+
+Header bugs rarely look like header bugs. They look like this:
+
+- **`req.body` is empty**, though the browser clearly sent JSON.
+- **Every user has the same IP address** in your logs: the load balancer's.
+- **Your app redirects to `https://` forever**, but only in production.
+- **One user gets `431 Request Header Fields Too Large`**, and nobody else does.
+- **A logged-in user sees someone else's page**, served from a cache.
+
+And in the Network tab, the **Headers** panel of a request you thought was simple:
+
+```text title="fetch('/api/orders'), as Chrome sent it (real capture, User-Agent trimmed)"
+GET /api/orders HTTP/1.1
+Host: 127.0.0.1:9400
+Connection: keep-alive
+sec-ch-ua-platform: "Windows"
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) …
+sec-ch-ua: "Not:A-Brand";v="8", "Chromium";v="156", "Google Chrome";v="156"
+sec-ch-ua-mobile: ?0
+Accept: */*
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: http://127.0.0.1:9400/
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cookie: a=1; b=2
+```
+
+Before reading on, try this one:
+
+<Predict
+  question="You send JSON with fetch(url, { method: 'POST', body: JSON.stringify({ qty: 1 }) }). Your Express app uses express.json(), but req.body is empty. Why?"
+  options={[
+    "fetch doesn't send a body with POST",
+    "The browser labelled the body Content-Type: text/plain, so the JSON parser skipped it",
+    "Express needs a restart",
+    "CORS removed the body",
+  ]}
+  answer={1}
+>
+We tried it. Chrome sent `Content-Type: text/plain;charset=UTF-8`, because a string body is just text unless you say otherwise. `express.json()` only parses bodies labelled `application/json`, so it left the body alone: `req.body` was `{}` in Express 4 and `undefined` in Express 5. One header, `Content-Type: application/json`, fixes it.
+</Predict>
+
+## What's underneath
+
+### What is a header, really?
+
+A <Term id="header">header</Term> is a line of text before the body: a name, a colon, a value. Requests carry them to say *what's being asked and by whom*; responses carry them to say *what this is and what to do with it*. Three rules explain a lot of surprises:
+
+- **Names are case-insensitive.** `Content-Type`, `content-type` and `CONTENT-TYPE` are the same header. HTTP/2 and HTTP/3 send them all lowercase, and Node.js lowercases them for you: you read `req.headers['content-type']`, whatever the sender wrote. (The original spelling survives in `req.rawHeaders`.)
+- **Most aren't yours.** The browser writes the bulk, and some it won't let you touch. When we called `fetch` with `Host`, `Origin` and `Cookie` headers of our own, Chrome dropped all three **without an error** and sent its real values. Only our `X-Request-Id` got through. These are <Term id="forbidden-header">forbidden headers</Term>: if a page could fake them, it could pretend to be another site.
+- **Each hop reads only what it needs.** A CDN cares about caching; a load balancer about routing; your app about who the user is. The rest passes through, unread.
+
+### Follow one request, header by header
+
+A page on `shop.example.com` fetches products from `api.example.com`, which sits behind a CDN and a load balancer. Press **Next** and watch which headers each stop reads, which it adds, and which it throws away. Then keep going for the response.
+
+<HeaderTrip />
+
+### Host: one address, many sites
+
+Why does the CDN look at `Host` first? Because one IP address usually serves many sites. The `Host` header is the only thing that says which one you want. We tried it on one of `example.com`'s addresses:
+
+```text title="curl to one IP address over plain HTTP, two Host headers (real output)"
+Host: example.com        →  200
+Host: 104.20.23.154      →  403  error code: 1003
+```
+
+Same machine, same connection type; only the header differed. That's also why a server can answer "wrong site" or "not found" for a request that reached the right IP address.
+
+### X-Forwarded-For: who is really calling?
+
+Every proxy opens a new connection to the next hop. So by the time a request reaches your app, the connection comes from the load balancer, not the user. Proxies pass the original details along in headers:
+
+- <Term id="x-forwarded-for">X-Forwarded-For</Term>: the client's address, and each proxy *appends* the address it saw, so it becomes a list.
+- `X-Forwarded-Proto`: whether the user used `http` or `https`.
+- `X-Forwarded-Host`: the `Host` the user asked for.
+
+Here's the catch: **a client can send its own X-Forwarded-For**, and proxies append to it rather than replace it. We sent a request to an Express 5 app as if it had passed a CDN and a load balancer, with a fake `6.6.6.6` at the front, and asked Express for `req.ip`:
+
+```text title="X-Forwarded-For: 6.6.6.6, 203.0.113.7, 198.51.100.2 (real Express 5 output)"
+trust proxy not set  →  ip: ::ffff:127.0.0.1   protocol: http
+trust proxy true     →  ip: 6.6.6.6            protocol: https
+trust proxy 2        →  ip: 203.0.113.7        protocol: https
+```
+
+- **Not set:** Express ignores the headers, so every user has the load balancer's address, and `req.protocol` says `http` even though the user used `https`.
+- **`true`:** Express believes the whole list and takes the leftmost entry, which the client wrote itself. A rate limiter keyed on that can be dodged by changing one header.
+- **`2`:** "there are exactly two proxies in front of me". Express counts two hops back from the right, past the entries its own proxies added, and lands on the real client.
+
+<Predict
+  question="Your app is behind a load balancer that ends HTTPS. You force HTTPS with: if (req.protocol !== 'https') redirect to https://… What happens if you never set trust proxy?"
+  options={[
+    "It works: the user used https",
+    "An endless redirect loop: the app always sees http",
+    "The load balancer fixes the protocol",
+    "Express throws an error",
+  ]}
+  answer={1}
+>
+**A redirect loop.** The load balancer talks to your app over plain HTTP, so without trusting `X-Forwarded-Proto`, `req.protocol` is always `http`. The app redirects to https, the browser comes back through the load balancer over https, and the app sees `http` again. Chrome eventually gives up with `ERR_TOO_MANY_REDIRECTS`.
+</Predict>
+
+### Hop-by-hop headers
+
+A few headers describe only **one link** of the chain, not the request: `Connection`, `Keep-Alive`, `Transfer-Encoding`, `Upgrade`. These are <Term id="hop-by-hop">hop-by-hop</Term> headers, and a proxy must remove them and set its own for the next hop. The browser's `Connection: keep-alive` says "keep *this* connection to the CDN open". It means nothing to your app. HTTP/2 doesn't allow `Connection` at all.
+
+### Caching headers: instructions for everyone on the way back
+
+The response headers that cause the most damage are the ones about caching, because a CDN obeys them for **every** visitor:
+
+- <Term id="cache-control">Cache-Control</Term>: `public, max-age=60` means anyone, including the CDN, may reuse this for 60 seconds. `private` means only the user's own browser may. `no-store` means nobody keeps a copy. And `no-cache`, despite its name, means "you may keep it, but check with me before every use".
+- `Vary`: which request headers change the answer. `Vary: Accept-Encoding` tells the CDN to keep a gzip copy and a Brotli copy separately.
+- <Term id="etag">ETag</Term>: a version tag. Next time the browser sends `If-None-Match: "v42"`, and if nothing changed, the server replies `304 Not Modified` with no body.
+- `Age`: added by caches. How old their copy is, in seconds.
+
+You can read a CDN's decisions straight from its headers. When we asked `example.com` for its home page, the answer came with `cf-cache-status: HIT` and `Age: 6`: Cloudflare served a six-second-old copy, and the origin server never saw the request. GitHub's home page, which is different for every logged-in user, comes with `Cache-Control: max-age=0, private, must-revalidate`.
+
+<Callout type="insight" title="Set-Cookie is invisible to JavaScript">
+Even on your own site, `response.headers.get('set-cookie')` returns `null`. We checked: the cookies arrived and the browser stored them, but the Fetch standard hides `Set-Cookie` from page scripts entirely. Cookies marked `HttpOnly` stay hidden from `document.cookie` too, which is the point: script injected by an attacker can't read a session cookie it can't see.
+</Callout>
+
+## What breaks
+
+| What you see | The header behind it | Fix |
+| --- | --- | --- |
+| `req.body` is `{}` or `undefined` | `Content-Type` isn't `application/json` | Set `Content-Type: application/json` on the request |
+| Every user has the same IP | `X-Forwarded-For` ignored | `app.set('trust proxy', <number of proxies>)` |
+| Rate limits can be dodged | `X-Forwarded-For` trusted blindly | Trust exactly the proxies you run, not `true` |
+| Redirect loop to https | `X-Forwarded-Proto` ignored | Trust the proxy, or redirect at the load balancer |
+| `431 Request Header Fields Too Large` | Headers over Node.js's 16 KB limit, usually piled-up cookies | Fewer, smaller cookies; clear old ones |
+| A logged-in page shown to another user | `Cache-Control: public` on a personal response | `private` or `no-store` for anything personal |
+| A custom header vanishes behind nginx | An underscore in its name (`X_Tenant_Id`) | Use hyphens: nginx drops underscored names by default |
+| A response header is set but `fetch` can't read it | Cross-origin responses only expose a few headers | `Access-Control-Expose-Headers: X-Total-Count` |
+| CORS works for one site, then fails for another | A CDN cached one site's `Access-Control-Allow-Origin` | `Vary: Origin` (see the [CORS post](/posts/your-browser-blocked-your-request/)) |
+
+The `431` row is real Node.js behaviour: we sent requests with a 15 KB cookie and a 17 KB one to a plain Node.js server. The first got `200`; the second got `431 Request Header Fields Too Large` before any of our code ran. It usually hits one user, the one whose browser has collected the most cookies, which is why it's so hard to reproduce. nginx has a similar limit and replies `400 Request Header Or Cookie Too Large`.
+
+<Callout type="story" title="Think of it like this">
+Headers are the labels on a parcel. The courier reads the address, the depot stamps it, the customs desk reads the contents label, and you read the gift note. Nobody reads every label, and if a label is missing or wrong, the parcel can still arrive and still go wrong.
+</Callout>
+
+## Field notes: debugging headers
+
+<Steps>
+<Step title="Look at what the browser actually sent">
+DevTools → **Network** → click the request → **Headers**. Request headers are what left the browser; response headers are what came back. Switch on **Raw** to see them exactly as sent. Right-click a request → **Copy** → **Copy as cURL** to replay it from a terminal with the same headers.
+</Step>
+<Step title="Look at what your app actually received">
+Log `req.headers` (or `req.rawHeaders` for the original spelling) at the very first line of your app, before any middleware. Compare it with DevTools. Anything added, changed or missing happened somewhere in between.
+</Step>
+<Step title="Ask each hop separately">
+`curl -sI https://api.example.com/products` shows only the response headers. Call your app directly, bypassing the CDN, and compare: the differences are what the CDN and load balancer did.
+</Step>
+<Step title="Read the cache's own headers">
+`Age`, and vendor headers such as `cf-cache-status` or `x-cache`, say whether a cache answered and how old its copy was. If `Age` is above zero, your server didn't see that request.
+</Step>
+<Step title="Count your proxies before trusting them">
+Write down every proxy between the internet and your app: CDN, load balancer, ingress. Set `trust proxy` to that number, or to their address ranges. Then check `req.ip` from a real request, with a fake `X-Forwarded-For` added, and make sure the fake one doesn't win.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"Header names are case-sensitive."** They aren't. HTTP/2 even sends them all in lowercase, and Node.js lowercases them for you.
+
+**"The server receives exactly what my code sent."** The browser adds a dozen headers and drops forbidden ones silently; every proxy adds, rewrites and removes more.
+
+**"X-Forwarded-For is the user's IP."** It's a list, and its leftmost entry is whatever the client chose to send. Only the entries your own proxies added can be trusted.
+
+**"`no-cache` means don't cache."** It means "check with the server before reusing". `no-store` is the one that means don't keep a copy.
+
+**"Custom headers must start with X-."** That was only ever a convention, and RFC 6648 retired it back in 2012. `X-Request-Id` is fine; so is `Request-Id`.
+
+## Summary
+
+<FiveQuestions
+  problem="A request needs more than a URL: who's asking, what they accept, how it may be cached, where it came from. Headers carry that, and each hop reads the few it needs."
+  sees="Empty `req.body`, every user with the load balancer's IP, https redirect loops, `431 Request Header Fields Too Large`, personal pages served from a cache, custom headers that vanish."
+  underneath="The browser writes most request headers and refuses to let pages fake some. CDNs read Host, Accept-Encoding and caching headers; load balancers route on Host and append X-Forwarded-For; your app reads Cookie, Content-Type and Origin. Hop-by-hop headers are rewritten at every link."
+  breaks="A missing Content-Type, an untrusted or over-trusted X-Forwarded-For, oversized cookies, `public` caching of personal data, underscores in names behind nginx, and response headers CORS won't expose."
+  misconception="That header names are case-sensitive, that the server sees what your code sent, that X-Forwarded-For is the user's IP, that `no-cache` means don't cache, and that custom headers need an X- prefix."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "You fetch() with a JSON string body and no headers. What Content-Type does Chrome send?",
+      options: ["application/json", "text/plain;charset=UTF-8", "None at all", "multipart/form-data"],
+      answer: 1,
+      why: "A string body is labelled as plain text unless you set Content-Type yourself, so JSON body parsers skip it.",
+    },
+    {
+      q: "A page calls fetch() with a header `Host: evil.example`. What happens?",
+      options: ["The request goes to evil.example", "fetch throws an error", "The browser silently ignores it and sends the real Host", "The server rejects it"],
+      answer: 2,
+      why: "Host is a forbidden header. The browser drops your value without an error and uses the real one.",
+    },
+    {
+      q: "Your Express app sits behind exactly one load balancer. Which setting gives the real client IP in req.ip?",
+      options: ["Nothing: req.ip is always right", "app.set('trust proxy', true)", "app.set('trust proxy', 1)", "Read req.headers.host"],
+      answer: 2,
+      why: "Trusting one hop takes the address your load balancer appended. `true` trusts the whole list, including whatever the client wrote at the front.",
+    },
+    {
+      q: "What does `Cache-Control: no-cache` mean?",
+      options: ["Never store this", "Store it, but check with the server before each reuse", "Only the browser may cache it", "Cache it forever"],
+      answer: 1,
+      why: "no-cache means revalidate before use. no-store is the one that forbids keeping a copy.",
+    },
+    {
+      q: "Which of these is a hop-by-hop header that a proxy should not pass on?",
+      options: ["Content-Type", "Authorization", "Connection", "Cache-Control"],
+      answer: 2,
+      why: "Connection describes only the current link, so every proxy removes it and sets its own.",
+    },
+    {
+      q: "One user gets `431 Request Header Fields Too Large` from your Node.js API; nobody else does. Most likely cause?",
+      options: ["Their URL is too long", "Their cookies have grown past Node.js's 16 KB header limit", "Their browser is too old", "The server is overloaded"],
+      answer: 1,
+      why: "Node.js rejects requests whose headers exceed 16 KB by default, and cookies are the usual culprit.",
+    },
+    {
+      q: "Your API sets `X-Total-Count`, but a page on another origin reads null from response.headers.get('X-Total-Count'). Why?",
+      options: ["The header was stripped by the CDN", "Cross-origin responses expose only a few headers unless Access-Control-Expose-Headers lists it", "Header names are case-sensitive", "fetch can't read custom headers"],
+      answer: 1,
+      why: "For cross-origin requests, the browser hides response headers outside a small safe list unless the server exposes them.",
+    },
+    {
+      q: "A response has `Age: 40`. What does that tell you?",
+      options: ["The server took 40 ms", "A cache served a copy that was 40 seconds old", "The response expires in 40 seconds", "The page is 40 days old"],
+      answer: 1,
+      why: "Caches add Age to say how long ago they got their copy. Your server didn't handle this request.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="How does a server behind a load balancer find out the client's real IP address, and what's the security risk?">
+The load balancer opens its own connection, so the socket address is the load balancer's. Proxies pass the client address in X-Forwarded-For (or the standard Forwarded header), each appending the address it saw. The risk is that a client can send its own X-Forwarded-For, and proxies append to it, so the leftmost entry is attacker-controlled. Trust only the entries added by proxies you run: count hops from the right, for example Express's trust proxy set to the number of proxies or their address ranges, never to true on an internet-facing chain.
+</Question>
+<Question q="What's the difference between Cache-Control no-cache, no-store, private and public?">
+public lets any cache, including shared ones like CDNs, store the response. private restricts it to the user's own browser, which matters for anything personal. no-cache allows storing but requires revalidating with the server before each reuse, typically with ETag and If-None-Match, getting a cheap 304 when nothing changed. no-store forbids keeping a copy at all. max-age sets how long a stored copy is fresh, and s-maxage overrides it for shared caches.
+</Question>
+<Question q="What is the Vary header for, and what goes wrong without it?">
+Vary lists the request headers that change the response, so caches keep a separate copy per value. Vary: Accept-Encoding keeps gzip and Brotli copies apart. Vary: Origin matters when Access-Control-Allow-Origin echoes the requesting origin: without it, a CDN can cache the response for one origin and serve it to another, which then fails the CORS check. Vary on something with many values, like User-Agent or Cookie, can make caching almost useless.
+</Question>
+<Question q="What are hop-by-hop headers?">
+Headers that describe a single connection rather than the request end to end: Connection, Keep-Alive, Transfer-Encoding, Upgrade, Proxy-Authorization and any header named in Connection. Each proxy removes them and generates its own for the next hop. HTTP/2 and HTTP/3 forbid connection-specific headers entirely, since they manage connections differently.
+</Question>
+<Question q="Why can't JavaScript set some request headers, such as Host, Cookie or Origin?">
+They're forbidden request headers in the Fetch standard. If a page could set Origin or Cookie, it could impersonate another site or another user's session and defeat CORS and CSRF protections; if it could set Host or Content-Length, it could confuse servers and proxies. The browser silently ignores attempts to set them, without an error.
+</Question>
+<Question q="A request works with curl but your Express app gets an empty req.body from the browser. How do you debug it?">
+Compare the request headers in DevTools with what curl sends, looking first at Content-Type: body parsers only run for matching types, and fetch with a string body sends text/plain. Log req.headers at the start of the app to see what arrived. Then check body size limits, a proxy rewriting the request, and whether the body parser middleware is registered before the route.
+</Question>
+<Question q="What is the Host header used for, and why does it matter for proxies and certificates?">
+It names the site the request is for, so one IP address can serve many sites (virtual hosting). CDNs and load balancers pick configuration and routing rules by Host, and apps use it to build absolute URLs, which is why trusting X-Forwarded-Host from untrusted clients can enable cache poisoning or password-reset links pointing at an attacker's domain. In TLS, SNI carries the same name earlier, so the right certificate can be chosen before HTTP starts.
+</Question>
+</Interview>
+
+## What's next
+
+Two headers in this post, `Origin` and `Access-Control-Allow-Origin`, decide whether the browser hands a response to your page at all. That's the next post this week, and it starts with the most confusing error in web development: **[Your Browser Just Blocked Your Request. Why?](/posts/your-browser-blocked-your-request/)**
+
+### Sources and further reading
+
+- RFC 9110: [HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110), including section 7.6.1 on hop-by-hop fields
+- RFC 9111: [HTTP Caching](https://www.rfc-editor.org/rfc/rfc9111)
+- RFC 7239: [Forwarded HTTP Extension](https://www.rfc-editor.org/rfc/rfc7239), and RFC 6648: [Deprecating the "X-" Prefix](https://www.rfc-editor.org/rfc/rfc6648)
+- Fetch Standard: [forbidden request headers](https://fetch.spec.whatwg.org/#forbidden-request-header)
+- MDN Web Docs: [HTTP headers](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers)
+- Express: [Express behind proxies](https://expressjs.com/en/guide/behind-proxies.html)
+- Node.js docs: [http.maxHeaderSize](https://nodejs.org/api/http.html#httpmaxheadersize)
+- nginx docs: [underscores_in_headers](https://nginx.org/en/docs/http/ngx_http_core_module.html#underscores_in_headers)
