@@ -3,6 +3,7 @@ import { withBase } from "@/lib/site";
 import { Callout, CodeBlock, Compare, DevTools, FiveQuestions, H2, H3, SmartLink, Step, Steps, Table } from "./basics";
 import { CodeTabs, Predict } from "./client-bits";
 import { DnsLookup } from "./dns";
+import { HandshakeTimeline } from "./handshake";
 import { Interview, Question } from "./interview";
 import { RequestJourney } from "./journey";
 import { CorsPlayground, HelmetLab } from "./lazy";
@@ -48,6 +49,7 @@ export function mdxComponents(slug: string, section: "posts" | "case-studies" = 
     HelmetLab,
     RequestJourney,
     DnsLookup,
+    HandshakeTimeline,
     TimingTab,
     IdMachine,
     BitLayout,

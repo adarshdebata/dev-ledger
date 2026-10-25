@@ -76,6 +76,11 @@ const Dns = dynamic(() => import("./dns-lookup"), {
   loading: () => <Placeholder label="DNS lookup" className="h-[34rem]" />,
 });
 
+const Handshake = dynamic(() => import("./handshake-player"), {
+  ssr: false,
+  loading: () => <Placeholder label="handshake player" className="h-[38rem]" />,
+});
+
 const Ids = dynamic(() => import("./id-machine"), {
   ssr: false,
   loading: () => <Placeholder label="ID player" className="h-[40rem]" />,
@@ -102,6 +107,15 @@ export function DnsPlayer() {
   return (
     <WhenNear label="DNS lookup" className="h-[34rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
       <Dns />
+    </WhenNear>
+  );
+}
+
+/** Only for screens wide enough for it, and only when motion is welcome. */
+export function HandshakePlayer() {
+  return (
+    <WhenNear label="handshake player" className="h-[38rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
+      <Handshake />
     </WhenNear>
   );
 }
