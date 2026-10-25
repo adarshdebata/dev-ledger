@@ -299,6 +299,22 @@ export const glossary = {
     term: "ETag",
     def: "A version tag on a response. The browser sends it back in If-None-Match, and the server can reply 304 Not Modified instead of the whole body.",
   },
+  "network-interface": {
+    term: "Network interface",
+    def: "One of a machine's connections to a network, each with its own address: the loopback, Wi-Fi, Ethernet, a VPN, or a container's virtual network card.",
+  },
+  loopback: {
+    term: "Loopback",
+    def: "A network interface that never leaves the machine. 127.0.0.1 (and ::1 in IPv6) always means “this very machine”, whichever machine you ask.",
+  },
+  "unspecified-address": {
+    term: "0.0.0.0",
+    def: "As a listening address: “every interface this machine has”. It isn't an address you can connect to; a server listening on it accepts connections arriving on any interface.",
+  },
+  "port-publishing": {
+    term: "Port publishing",
+    def: "Docker's -p 3000:3000: listen on a port of the host and forward each connection to a port on the container's own address.",
+  },
   "snowflake-id": {
     term: "Snowflake ID",
     def: "A 64-bit number built from the current time, a machine number and a counter. Any server can make one without asking a database, and they sort roughly by time. Twitter made the idea popular.",
