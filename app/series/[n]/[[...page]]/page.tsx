@@ -61,7 +61,7 @@ export default async function SeriesPage({ params }: Props) {
               <h2 className="text-sm font-semibold">Topics in this series</h2>
               <span className="font-mono text-xs text-subtle">{covered}/20</span>
             </div>
-            <ol className="mt-4 space-y-2.5 text-[13.5px] lg:max-h-[65vh] lg:overflow-y-auto lg:pr-1">
+            <ol tabIndex={0} aria-label="Topics in this series" className="mt-4 space-y-2.5 rounded-md text-[13.5px] outline-none focus-visible:ring-2 focus-visible:ring-accent-soft lg:max-h-[65vh] lg:overflow-y-auto lg:pr-1">
               {topics.map((t, i) => (
                 <li key={t.n} className="flex gap-2.5">
                   {t.post ? (

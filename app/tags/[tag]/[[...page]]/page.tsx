@@ -32,6 +32,7 @@ export default async function TagPage({ params }: Props) {
         {all.length} article{all.length === 1 ? "" : "s"}
       </PageHeader>
       <div className="container-page py-12">
+        <h2 className="sr-only">Articles tagged {tag}</h2>
         <div className="grid gap-5">
           {items.map((p) => (
             <PostCard key={p.slug} post={p} />

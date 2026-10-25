@@ -129,10 +129,9 @@ export function Search() {
         type="button"
         onClick={open}
         className="group flex h-9 items-center gap-2 rounded-lg border border-line bg-bg/50 px-2.5 text-sm text-subtle transition-colors hover:border-line-strong hover:text-muted sm:w-48 lg:w-40 xl:w-48"
-        aria-label="Search articles"
       >
-        <SearchIcon className="size-4" />
-        <span className="hidden sm:inline">Search…</span>
+        <SearchIcon className="size-4" aria-hidden="true" />
+        <span className="sr-only sm:not-sr-only">Search…</span>
         <kbd className="ml-auto hidden rounded border border-line px-1.5 py-0.5 font-mono text-[10px] text-subtle sm:inline">{shortcut}</kbd>
       </button>
 

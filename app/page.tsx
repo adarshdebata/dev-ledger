@@ -8,7 +8,9 @@ import { WeekList } from "@/components/week-list";
 import { WindField } from "@/components/wind-field";
 import { authors } from "@/lib/authors";
 import { getAllPosts, postsInSeries, seriesRoadmap } from "@/lib/posts";
-import { currentWeek, external, series, site, weekName } from "@/lib/site";
+import { alternates, currentWeek, external, series, site, weekName } from "@/lib/site";
+
+export const metadata = { alternates: alternates("/") };
 
 const fiveQuestions = [
   "What problem does it solve?",
@@ -75,7 +77,7 @@ export default function Home() {
               href={`/posts/${newest.slug}/`}
               className="glass animate-fade-up group mt-6 inline-flex max-w-full items-center gap-2.5 rounded-full py-1.5 pr-3.5 pl-1.5 text-[13.5px] text-muted [animation-delay:400ms] hover:text-fg"
             >
-              <span className="shrink-0 rounded-full bg-accent-soft px-2.5 py-0.5 font-mono text-[11px] font-semibold text-white">New</span>
+              <span className="shrink-0 rounded-full bg-accent px-2.5 py-0.5 font-mono text-[11px] font-semibold text-bg">New</span>
               <span className="truncate">{newest.title}</span>
               <ArrowRight className="size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
             </Link>
@@ -113,7 +115,7 @@ export default function Home() {
       <section id="latest" className="container-page scroll-mt-28">
         <div className="border-t border-line pt-10">
           <div className="flex items-baseline justify-between gap-4">
-            <SectionLabel>Latest</SectionLabel>
+            <h2 className="eyebrow text-accent">Latest</h2>
             <Link href="/series/" className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline">
               View all articles <ArrowRight className="size-4" />
             </Link>
