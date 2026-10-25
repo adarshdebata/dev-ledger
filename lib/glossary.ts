@@ -243,6 +243,46 @@ export const glossary = {
     term: "DNS search suffix",
     def: "A domain your computer adds to names, so typing “wiki” can mean wiki.corp.example. Windows' nslookup adds it even to names that already have dots.",
   },
+  sni: {
+    term: "SNI",
+    def: "Server Name Indication: the site's name, sent in plain text in the first TLS message, so a server hosting many sites knows which certificate to show.",
+  },
+  alpn: {
+    term: "ALPN",
+    def: "The part of the TLS handshake where browser and server agree which protocol comes next, such as HTTP/2 (h2) or HTTP/1.1.",
+  },
+  "key-exchange": {
+    term: "Key exchange",
+    def: "How two machines agree on a secret key over a network anyone can watch. Each sends a public half; only they can combine the halves into the key.",
+  },
+  "certificate-authority": {
+    term: "Certificate authority",
+    def: "An organisation browsers trust to vouch that a certificate really belongs to a domain, such as Let's Encrypt. Its own certificate is the root of the chain.",
+  },
+  "intermediate-certificate": {
+    term: "Intermediate certificate",
+    def: "The link between a site's certificate and a trusted root. The server is supposed to send it along with its own certificate.",
+  },
+  quic: {
+    term: "QUIC",
+    def: "A transport built on UDP that HTTP/3 runs on. It merges the connection setup and the TLS 1.3 handshake into a single round trip.",
+  },
+  "zero-rtt": {
+    term: "0-RTT",
+    def: "A TLS 1.3 option that lets a returning client send its request in the very first message. An attacker can replay that data, so it's only safe for requests that can be repeated.",
+  },
+  "idle-timeout": {
+    term: "Idle timeout",
+    def: "How long a side keeps an unused connection open before closing it. Both ends have one, and they rarely match.",
+  },
+  "load-balancer": {
+    term: "Load balancer",
+    def: "A server that sits in front of several copies of your app and spreads requests across them.",
+  },
+  "alt-svc": {
+    term: "Alt-Svc",
+    def: "A response header that tells the browser the same site is also available another way, for example over HTTP/3: alt-svc: h3=\":443\".",
+  },
   "snowflake-id": {
     term: "Snowflake ID",
     def: "A 64-bit number built from the current time, a machine number and a counter. Any server can make one without asking a database, and they sort roughly by time. Twitter made the idea popular.",
