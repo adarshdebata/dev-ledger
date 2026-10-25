@@ -182,6 +182,19 @@ const MOTIFS: Record<Motif, React.ReactNode> = {
       ))}
     </>
   ),
+  // A machine with two doors; only one is open, and a connection reaches the app through it.
+  ports: (
+    <>
+      <rect x="36" y="12" width="116" height="80" rx="9" strokeWidth="1.5" className="fill-card stroke-line-strong" />
+      <rect x="82" y="26" width="60" height="52" rx="7" strokeWidth="1.5" strokeDasharray="3 3" className="fill-teal-tint stroke-teal-soft" />
+      <rect x="31" y="26" width="10" height="16" rx="2.5" strokeWidth="1.5" className="fill-ok/20 stroke-ok" />
+      <rect x="31" y="60" width="10" height="16" rx="2.5" strokeWidth="1.5" strokeDasharray="2 2" className="fill-card stroke-line-strong" />
+      <rect x="100" y="42" width="26" height="20" rx="4" className="fill-accent-soft" />
+      <path d="M8 34 H31 M41 34 Q70 34 100 50" strokeWidth="1.8" fill="none" strokeDasharray="4 4" className="thumb-flow stroke-accent-soft" />
+      <path d="M8 68 H24" strokeWidth="1.8" strokeLinecap="round" className="stroke-bad" />
+      <path d="M22 63 l6 10 m0 -10 l-6 10" strokeWidth="1.6" strokeLinecap="round" className="thumb-pulse stroke-bad" />
+    </>
+  ),
   // A project, its packages, and the one shared store they all link into.
   deps: (
     <>
