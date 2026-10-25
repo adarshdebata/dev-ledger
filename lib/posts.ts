@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { getAuthor } from "./authors";
-import { chains, roadmap, site, type ChainId } from "./site";
+import { chains, roadmap, site, weekPlace, type ChainId } from "./site";
 
 /** Splits a file into its YAML frontmatter (between the opening `---` lines) and the body after it. */
 export function parseFrontmatter(raw: string): { data: Record<string, unknown>; content: string } {
@@ -100,7 +100,9 @@ export function getAllPosts(): Post[] {
   const slugs = fs.existsSync(POSTS_DIR)
     ? fs.readdirSync(POSTS_DIR).filter((d) => fs.existsSync(path.join(POSTS_DIR, d, "index.mdx")))
     : [];
-  cache = slugs.map(loadPost).sort((a, b) => b.date.localeCompare(a.date) || a.slug.localeCompare(b.slug));
+  // Posts published on the same day sort by their place in the weekly plan, later ones first.
+  const order = (p: Post) => weekPlace(p.slug)?.day.day ?? 0;
+  cache = slugs.map(loadPost).sort((a, b) => b.date.localeCompare(a.date) || order(b) - order(a) || a.slug.localeCompare(b.slug));
   return cache;
 }
 
