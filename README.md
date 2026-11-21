@@ -65,8 +65,12 @@ cover: ./cover.webp  # optional
 ```
 
 Titles stay plain: no "Day 3" or "Part 2" in them. The order a week is read in
-lives in `weeks` in [`lib/site.ts`](lib/site.ts), and readers see it as a list
-of what's out and what's coming.
+lives in `weeks` in [`lib/site.ts`](lib/site.ts). Each entry has a `title`, an
+`about` line saying what the post will cover, and a `slug` once the post exists.
+Readers see the week as a list: published posts are **Live**, the first one
+still missing from the current week is **Writing now**, and the rest are
+**Coming soon**. The current week is the first one with a post still to come,
+so the site moves on to the next week by itself.
 
 ## Authors and attribution
 

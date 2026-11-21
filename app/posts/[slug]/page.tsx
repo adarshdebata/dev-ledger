@@ -55,7 +55,7 @@ export default async function PostPage({ params }: Props) {
   const nextStage = chain && stageIndex >= 0 ? chain.stages[stageIndex + 1] : undefined;
   const nextStagePost = nextStage?.roadmap.map(postForRoadmapItem).find(Boolean);
   const at = weekPlace(post.slug);
-  const nextDayPost = at?.next?.slug ? getPost(at.next.slug) : undefined;
+  const nextDayPost = at?.next?.day.slug ? getPost(at.next.day.slug) : undefined;
   // Posts outside the weekly plan point at the next topic in their series instead.
   const nextItem = at ? undefined : roadmap.find((r) => r.n === Math.max(...post.roadmap) + 1 && r.series === post.series);
   const nextItemPost = nextItem ? postForRoadmapItem(nextItem.n) : undefined;
@@ -199,8 +199,9 @@ export default async function PostPage({ params }: Props) {
                 <div className="grid gap-4 sm:grid-cols-2">
                   {at?.next && (
                     <NextCard
-                      eyebrow={`Next in Week ${at.week.n}`}
-                      title={at.next.title}
+                      eyebrow={at.next.week === at.week ? `Next in Week ${at.week.n}` : `Week ${at.next.week.n} starts with`}
+                      title={at.next.day.title}
+                      sub={nextDayPost ? undefined : at.next.day.about}
                       href={nextDayPost ? `/posts/${nextDayPost.slug}/` : "/#this-week"}
                       soon={!nextDayPost}
                     />

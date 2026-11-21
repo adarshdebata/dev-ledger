@@ -4,11 +4,11 @@ import { Avatar } from "@/components/author";
 import { HeroWaterfall } from "@/components/hero-waterfall";
 import { Parallax } from "@/components/parallax";
 import { PostTile } from "@/components/post-card";
-import { WeekList } from "@/components/week-list";
+import { WeekBoard } from "@/components/week-list";
 import { WindField } from "@/components/wind-field";
 import { authors } from "@/lib/authors";
 import { getAllPosts, postsInSeries, seriesRoadmap } from "@/lib/posts";
-import { alternates, currentWeek, external, series, site, weekName } from "@/lib/site";
+import { alternates, external, series, site } from "@/lib/site";
 
 export const metadata = { alternates: alternates("/") };
 
@@ -199,15 +199,8 @@ export default function Home() {
 
       {/* Upcoming this week goes last: none of it can be read yet, and attention drops sharply after the first screens (NN/g). */}
       <section id="this-week" className="container-page mt-28 scroll-mt-28">
-        <div className="grid gap-10 border-t border-line pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] lg:gap-14">
-          <div>
-            <h2 className="text-3xl leading-tight font-semibold tracking-[-0.03em]">Upcoming this week</h2>
-            <p className="mt-3 font-mono text-[13px] font-medium text-accent">{weekName(currentWeek)}</p>
-            <p className="mt-4 max-w-md text-[16px] leading-relaxed text-muted">
-              {currentWeek.blurb} Start at the top for the full picture, or jump to any post.
-            </p>
-          </div>
-          <WeekList week={currentWeek} />
+        <div className="border-t border-line pt-10">
+          <WeekBoard />
         </div>
       </section>
     </>
