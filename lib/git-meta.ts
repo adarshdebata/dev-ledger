@@ -30,6 +30,9 @@ const meta = () => (cache && process.env.NODE_ENV === "production" ? cache : (ca
 export type Person = { name: string; author?: Author };
 const toPerson = (name: string, email?: string): Person => ({ name: authorByEmail(email)?.name ?? name, author: authorByEmail(email) });
 
+/** Who an email belongs to: a profile can list several addresses (say, after a change), and they still count as one person. */
+const personKey = (email: string) => authorByEmail(email)?.id ?? email.toLowerCase();
+
 export type History = {
   /** Original author: frontmatter `author` if given, otherwise whoever first committed the file. */
   author?: Person;
@@ -47,11 +50,17 @@ export function historyOf(file: string, frontmatterAuthor?: string): History {
     author,
     updated: f ? { by: toPerson(f.updated.name, f.updated.email), date: f.updated.date.slice(0, 10) } : undefined,
     revisions: f?.revisions ?? undefined,
-    contributors: (f?.contributors ?? []).map((c) => toPerson(c.name, c.email)),
+    contributors: [...new Map((f?.contributors ?? []).map((c) => [personKey(c.email), toPerson(c.name, c.email)])).values()],
   };
 }
 
 /** Everyone who has committed to the project, with what the numbers mean spelled out on the About page. */
 export function contributorStats() {
-  return meta().contributors.map((c) => ({ ...toPerson(c.name, c.email), commits: c.commits, added: c.added, removed: c.removed, articles: c.articles }));
+  const people = new Map<string, Person & Omit<Contributor, "name" | "email">>();
+  for (const c of meta().contributors) {
+    const key = personKey(c.email);
+    const seen = people.get(key) ?? { ...toPerson(c.name, c.email), commits: 0, added: 0, removed: 0, articles: 0 };
+    people.set(key, { ...seen, commits: seen.commits + c.commits, added: seen.added + c.added, removed: seen.removed + c.removed, articles: seen.articles + c.articles });
+  }
+  return [...people.values()];
 }
