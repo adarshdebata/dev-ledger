@@ -40,12 +40,20 @@ export const series: SeriesInfo[] = [
 
 export const getSeries = (n: number) => series.find((s) => s.n === n);
 
-export type WeekDay = { day: number; title: string; slug?: string };
+export type WeekDay = {
+  day: number;
+  title: string;
+  /** Set once the post exists; until then the day shows as being written or coming soon. */
+  slug?: string;
+  /** What the post will cover, shown while it's still to come. Once it's out, its own subtitle takes over. */
+  about?: string;
+};
 export type Week = { n: number; title: string; blurb: string; days: WeekDay[] };
 
 /**
  * The publishing plan: one theme a week, posts in reading order. `day` only orders them;
  * it's never shown (titles stay plain, and readers see "Week 1: <title>" plus what's coming).
+ * The current week is the first one with a post still to come (`getCurrentWeek` in lib/posts.ts).
  */
 export const weeks: Week[] = [
   {
@@ -62,15 +70,67 @@ export const weeks: Week[] = [
       { day: 7, title: "127.0.0.1 vs 0.0.0.0: Why It Works Locally but Not in Docker", slug: "127-0-0-1-vs-0-0-0-0" },
     ],
   },
+  {
+    n: 2,
+    title: "Things We Install Without Understanding",
+    blurb:
+      "The tools you set up once and never look inside again: what npm install really builds, what a lockfile pins, and the proxy, load balancer and CDN that stand between your app and its users.",
+    days: [
+      {
+        day: 1,
+        title: "You Ran npm install. Where Did All Those Packages Come From?",
+        about:
+          "One line in package.json becomes hundreds of folders. Follow npm as it resolves versions against the registry, reuses its cache, checks every download and runs install scripts you never read.",
+      },
+      {
+        day: 2,
+        title: "Why Is node_modules So Huge? And How Does require() Find Anything in It?",
+        about:
+          "Why one dependency brings dozens more, how the same package ends up installed twice, what hoisting flattens, and how require() walks up your folders until it finds a match.",
+      },
+      {
+        day: 3,
+        title: "It Worked Yesterday. What Does Your Lockfile Actually Lock?",
+        about:
+          "Version ranges versus the exact versions and checksums a lockfile pins, why CI should run npm ci, and why a package's own lockfile is ignored the moment someone installs it.",
+      },
+      {
+        day: 4,
+        title: "Your App Works with npm. Why Does It Break with pnpm?",
+        about:
+          "The shared store, hard links and symlinks behind pnpm's node_modules, why they save so much disk, and the phantom dependencies that npm's flat folder let you use without declaring.",
+      },
+      {
+        day: 5,
+        title: "502 Bad Gateway: Who Is the Gateway, and What Went Bad?",
+        about:
+          "What a reverse proxy like Nginx does in front of your app, how it differs from a forward proxy, and what 502, 504 and 413 each tell you about where a request died.",
+      },
+      {
+        day: 6,
+        title: "Your Load Balancer Is Working. So Why Is One Server Doing All the Work?",
+        about:
+          "What a load balancer actually spreads (connections or requests), how health checks pick who gets traffic, and why keep-alive, WebSockets and sticky sessions leave one server busy and another idle.",
+      },
+      {
+        day: 7,
+        title: "Your Fix Is Live. Why Do Users Still See the Old Version?",
+        about:
+          "The caches between your server and your users: how a CDN decides what to keep and for how long, reading HIT and MISS headers, purging, and why hashed file names beat purging.",
+      },
+    ],
+  },
 ];
 
-export const currentWeek = weeks[0];
-
-/** Where a post sits in the weekly plan, if it's part of one. */
+/** Where a post sits in the weekly plan, and what comes after it: the next day, or the next week's first post. */
 export function weekPlace(slug: string) {
-  for (const week of weeks) {
+  for (const [i, week] of weeks.entries()) {
     const day = week.days.find((d) => d.slug === slug);
-    if (day) return { week, day, next: week.days.find((d) => d.day === day.day + 1) };
+    if (!day) continue;
+    const later = week.days.find((d) => d.day === day.day + 1);
+    const nextWeek = weeks[i + 1];
+    const next = later ? { week, day: later } : nextWeek?.days[0] ? { week: nextWeek, day: nextWeek.days[0] } : undefined;
+    return { week, day, next };
   }
   return undefined;
 }

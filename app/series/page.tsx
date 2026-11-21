@@ -3,9 +3,9 @@ import Link from "next/link";
 import { ArrowRight, ChevronDown } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PostCard, PostTile } from "@/components/post-card";
-import { WeekList } from "@/components/week-list";
+import { WeekBoard } from "@/components/week-list";
 import { postsInSeries, seriesRoadmap } from "@/lib/posts";
-import { alternates, currentWeek, series, weekName } from "@/lib/site";
+import { alternates, series } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Series",
@@ -78,15 +78,8 @@ export default function SeriesIndexPage() {
         })}
 
         {/* Last on purpose: none of it can be read yet. */}
-        <section aria-labelledby="this-week" className="mt-6 grid gap-8 border-t border-line pt-14 pb-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] lg:gap-14">
-          <div>
-            <h2 id="this-week" className="text-3xl leading-tight font-semibold tracking-[-0.03em]">
-              Upcoming this week
-            </h2>
-            <p className="mt-3 font-mono text-[13px] font-medium text-accent">{weekName(currentWeek)}</p>
-            <p className="mt-4 max-w-md text-[16px] leading-relaxed text-muted">{currentWeek.blurb}</p>
-          </div>
-          <WeekList week={currentWeek} />
+        <section aria-labelledby="this-week" className="mt-6 border-t border-line pt-14 pb-6">
+          <WeekBoard headingId="this-week" />
         </section>
       </div>
     </>

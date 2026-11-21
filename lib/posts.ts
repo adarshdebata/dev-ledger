@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { getAuthor } from "./authors";
-import { chains, roadmap, site, weekPlace, type ChainId } from "./site";
+import { chains, roadmap, site, weekPlace, weeks, type ChainId, type Week } from "./site";
 
 /** Splits a file into its YAML frontmatter (between the opening `---` lines) and the body after it. */
 export function parseFrontmatter(raw: string): { data: Record<string, unknown>; content: string } {
@@ -107,6 +107,26 @@ export function getAllPosts(): Post[] {
 }
 
 export const getPost = (slug: string) => getAllPosts().find((p) => p.slug === slug);
+
+/** Live: published. Writing: the next post due in the current week. Soon: everything after it. */
+export type DayStatus = "live" | "writing" | "soon";
+
+const isOut = (slug?: string) => Boolean(slug && getPost(slug));
+
+/** The week being written: the first with a post still to come, or the last one once everything is out. */
+export const getCurrentWeek = (): Week => weeks.find((w) => w.days.some((d) => !isOut(d.slug))) ?? weeks[weeks.length - 1];
+
+/** A week's days in reading order, each with its post (once published) and its status. */
+export function weekProgress(week: Week) {
+  // Posts are written one at a time, in order: the first one missing from the current week is in progress.
+  const writing = week === getCurrentWeek() ? week.days.findIndex((d) => !isOut(d.slug)) : -1;
+  const days = week.days.map((d, i) => {
+    const post = d.slug ? getPost(d.slug) : undefined;
+    const status: DayStatus = post ? "live" : i === writing ? "writing" : "soon";
+    return { ...d, post, status };
+  });
+  return { days, live: days.filter((d) => d.post).length };
+}
 
 export const postsInSeries = (n: number) => getAllPosts().filter((p) => p.series === n);
 

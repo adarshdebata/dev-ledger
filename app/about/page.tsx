@@ -5,8 +5,8 @@ import { Avatar, DevCard } from "@/components/author";
 import { PageHeader } from "@/components/page-header";
 import { authors } from "@/lib/authors";
 import { contributorStats } from "@/lib/git-meta";
-import { getPost } from "@/lib/posts";
-import { alternates, currentWeek, site, weekName } from "@/lib/site";
+import { getCurrentWeek, getPost } from "@/lib/posts";
+import { alternates, site, weekName } from "@/lib/site";
 
 const n = (x: number) => x.toLocaleString("en-GB");
 
@@ -74,7 +74,7 @@ export default function AboutPage() {
           <H2 id="who-writes-it">Who writes it</H2>
           <div className="mt-8 grid grid-cols-1 gap-6">
             {authors.map((a, i) => (
-              <DevCard key={a.id} author={a} stats={statsFor(a.id)} status={i === 0 ? `Writing ${weekName(currentWeek)}` : undefined} />
+              <DevCard key={a.id} author={a} stats={statsFor(a.id)} status={i === 0 ? `Writing ${weekName(getCurrentWeek())}` : undefined} />
             ))}
           </div>
           <p id="contributions" className="mt-5 max-w-3xl scroll-mt-28 text-[13.5px] leading-relaxed text-subtle">
