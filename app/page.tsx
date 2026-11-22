@@ -6,9 +6,9 @@ import { Parallax } from "@/components/parallax";
 import { PostTile } from "@/components/post-card";
 import { WeekBoard } from "@/components/week-list";
 import { WindField } from "@/components/wind-field";
-import { authors } from "@/lib/authors";
+import { authors, socialLinks } from "@/lib/authors";
 import { getAllPosts, postsInSeries, seriesRoadmap } from "@/lib/posts";
-import { alternates, external, series, site } from "@/lib/site";
+import { absoluteUrl, alternates, external, series, site } from "@/lib/site";
 
 export const metadata = { alternates: alternates("/") };
 
@@ -42,8 +42,34 @@ export default function Home() {
   const newest = posts[0];
   const owner = authors[0];
 
+  // Tells search engines what this site is and who writes it.
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": `${absoluteUrl("/")}#website`,
+        url: absoluteUrl("/"),
+        name: site.name,
+        description: site.description,
+        inLanguage: "en",
+        publisher: { "@id": `${absoluteUrl("/")}#author` },
+      },
+      {
+        "@type": "Person",
+        "@id": `${absoluteUrl("/")}#author`,
+        name: owner?.name ?? site.author.name,
+        jobTitle: owner?.title,
+        url: absoluteUrl("/about/"),
+        sameAs: owner ? socialLinks(owner).map((l) => l.href) : [site.author.github],
+      },
+    ],
+  };
+
   return (
     <>
+      {/* "<" is escaped so no text can ever close this tag early. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       {/* Hero: centred and quiet, over a field of moving air that drifts a little slower than the page */}
       <section className="relative isolate overflow-hidden">
         <Parallax distance={110} className="absolute inset-0 -z-10">
