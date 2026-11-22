@@ -177,7 +177,7 @@ const MOTIFS: Record<Motif, React.ReactNode> = {
       ).map(([w, c, i]) => (
         <g key={i}>
           <rect x="28" y={39 + i * 10.5} width={w} height="4" rx="2" className={`thumb-slide ${c}`} style={{ animationDelay: `${i * 0.12}s` }} />
-          <rect x={34 + w} y={39 + i * 10.5} width={70 - w} height="4" rx="2" className="fill-line" />
+          <rect x={34 + w} y={39 + i * 10.5} width={98 - w} height="4" rx="2" className="fill-line" />
         </g>
       ))}
     </>
