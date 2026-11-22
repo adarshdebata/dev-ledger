@@ -2,7 +2,7 @@
 //   - per article: who first committed it, who last changed it and when, how many revisions
 //   - per contributor: commits, lines added/removed, and articles they first wrote
 // File-level history is used (git log --follow -- <file>), so the person who last pushed
-// is never credited with articles they didn't touch. Merge commits and the lockfile are skipped.
+// is never credited with articles they didn't touch. Merge commits, bot commits and the lockfile are skipped.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -30,6 +30,9 @@ try {
 
 const person = (name, email) => ({ name, email: email.toLowerCase() });
 
+// Bots such as Dependabot commit too (dependency updates), but they aren't people to credit.
+const isBot = (name) => name.endsWith("[bot]");
+
 // Per content file
 const files = {};
 for (const dir of CONTENT_DIRS) {
@@ -39,11 +42,13 @@ for (const dir of CONTENT_DIRS) {
     const rel = `${dir}/${slug}/index.mdx`;
     if (!fs.existsSync(path.join(ROOT, rel))) continue;
     const lines = git("log", "--follow", "--format=%H%x09%an%x09%ae%x09%aI", "--", rel).trim().split("\n").filter(Boolean);
-    if (lines.length === 0) continue; // not committed yet
-    const commits = lines.map((l) => {
-      const [hash, name, email, date] = l.split("\t");
-      return { hash, ...person(name, email), date };
-    });
+    const commits = lines
+      .map((l) => {
+        const [hash, name, email, date] = l.split("\t");
+        return { hash, ...person(name, email), date };
+      })
+      .filter((c) => !isBot(c.name));
+    if (commits.length === 0) continue; // not committed yet
     const first = commits[commits.length - 1];
     const last = commits[0];
     const byEmail = new Map();
@@ -65,6 +70,10 @@ const log = git("log", "--no-merges", "--numstat", "--format=@%x09%an%x09%ae", "
 for (const line of log.split("\n")) {
   if (line.startsWith("@\t")) {
     const [, name, email] = line.split("\t");
+    if (isBot(name)) {
+      current = null; // its numstat lines that follow are skipped too
+      continue;
+    }
     const key = email.toLowerCase();
     current = stats.get(key) ?? { ...person(name, email), commits: 0, added: 0, removed: 0, articles: 0 };
     current.commits++;
