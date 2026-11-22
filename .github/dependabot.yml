@@ -5,6 +5,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # shiki and its @shikijs plugins share one core: updated apart, two copies get installed.
+      shiki:
+        patterns: ["shiki", "@shikijs/*"]
     ignore:
       # The site builds on Node 24 (see deploy.yml), so its types stay on the 24.x line.
       - dependency-name: "@types/node"
