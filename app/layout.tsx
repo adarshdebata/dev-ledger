@@ -16,8 +16,9 @@ export const metadata: Metadata = {
   description: site.description,
   authors: [{ name: site.author.name, url: site.author.github }],
   alternates: { types: { "application/rss+xml": [{ url: "/rss.xml", title: site.name }] } },
-  openGraph: { type: "website", siteName: site.name, locale: "en_GB" },
-  twitter: { card: "summary_large_image" },
+  // Pages without their own image (posts have one each) share the site card.
+  openGraph: { type: "website", siteName: site.name, locale: "en_GB", images: [{ url: "/og.png", width: 1200, height: 630, alt: site.theme }] },
+  twitter: { card: "summary_large_image", images: ["/og.png"] },
   // Other sites see only our origin, never the page a reader came from.
   referrer: "strict-origin-when-cross-origin",
 };
