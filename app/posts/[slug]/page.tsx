@@ -24,22 +24,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!post) return {};
   const url = `/posts/${post.slug}/`;
   const image = { url: `${url}og.png`, width: 1200, height: 630, alt: post.title };
+  // The subtitle is the right length for a search result; the longer summary is cut off there.
   return {
     title: post.title,
-    description: post.summary,
+    description: post.subtitle,
     keywords: post.tags,
     alternates: alternates(url),
     openGraph: {
       type: "article",
       title: post.title,
-      description: post.summary,
+      description: post.subtitle,
       url,
       publishedTime: post.date,
       authors: [site.author.name],
       tags: post.tags,
       images: [image],
     },
-    twitter: { card: "summary_large_image", title: post.title, description: post.summary, images: [image.url] },
+    twitter: { card: "summary_large_image", title: post.title, description: post.subtitle, images: [image.url] },
   };
 }
 
@@ -65,18 +66,39 @@ export default async function PostPage({ params }: Props) {
   const author = history.author ?? { name: site.author.name };
   const updated = history.updated && (history.revisions ?? 1) > 1 && history.updated.date > post.date ? history.updated : undefined;
 
+  const pageUrl = absoluteUrl(`/posts/${post.slug}/`);
   const jsonLd = {
     "@context": "https://schema.org",
-    "@type": "TechArticle",
-    headline: post.title,
-    description: post.summary,
-    datePublished: post.date,
-    ...(updated ? { dateModified: updated.date } : {}),
-    author: { "@type": "Person", name: author.name, url: author.author ? `https://github.com/${author.author.github}` : site.author.github },
-    image: absoluteUrl(`/posts/${post.slug}/og.png`),
-    url: absoluteUrl(`/posts/${post.slug}/`),
-    keywords: post.tags.join(", "),
-    license: "https://creativecommons.org/licenses/by/4.0/",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "@id": `${pageUrl}#article`,
+        mainEntityOfPage: pageUrl,
+        headline: post.title,
+        description: post.subtitle,
+        abstract: post.summary,
+        datePublished: post.date,
+        dateModified: updated?.date ?? post.date,
+        author: { "@type": "Person", name: author.name, url: author.author ? `https://github.com/${author.author.github}` : site.author.github },
+        publisher: { "@type": "Person", name: site.author.name, url: site.author.github },
+        image: absoluteUrl(`/posts/${post.slug}/og.png`),
+        url: pageUrl,
+        inLanguage: "en",
+        articleSection: series.title,
+        isPartOf: { "@type": "CreativeWorkSeries", name: at ? weekName(at.week) : `Series ${series.n}: ${series.title}` },
+        timeRequired: `PT${post.readingMinutes}M`,
+        keywords: post.tags.join(", "),
+        license: "https://creativecommons.org/licenses/by/4.0/",
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: absoluteUrl("/") },
+          { "@type": "ListItem", position: 2, name: series.title, item: absoluteUrl(`/series/${series.n}/`) },
+          { "@type": "ListItem", position: 3, name: post.title, item: pageUrl },
+        ],
+      },
+    ],
   };
 
   return (
