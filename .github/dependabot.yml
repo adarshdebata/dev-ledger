@@ -9,6 +9,9 @@ updates:
       # shiki and its @shikijs plugins share one core: updated apart, two copies get installed.
       shiki:
         patterns: ["shiki", "@shikijs/*"]
+      # The PostCSS plugin pins its own tailwindcss: updated apart, two copies get installed.
+      tailwind:
+        patterns: ["tailwindcss", "@tailwindcss/postcss"]
     ignore:
       # The site builds on Node 24 (see deploy.yml), so its types stay on the 24.x line.
       - dependency-name: "@types/node"
