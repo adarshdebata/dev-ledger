@@ -80,8 +80,9 @@ export default function AboutPage() {
           <p id="contributions" className="mt-5 max-w-3xl scroll-mt-28 text-[13.5px] leading-relaxed text-subtle">
             Counted from the Git history every time the site is built. <strong className="text-muted">Articles</strong> are the
             ones a person first wrote. <strong className="text-muted">Commits</strong> and{" "}
-            <strong className="text-muted">lines changed</strong> cover the whole project, leaving out merge commits and the
-            lockfile. Lines changed show how much work went in, not how valuable it was, so treat them as a rough guide.
+            <strong className="text-muted">lines changed</strong> cover the whole project, leaving out merge commits, the lockfile
+            and commits by bots such as Dependabot. Lines changed show how much work went in, not how valuable it was, so treat
+            them as a rough guide.
           </p>
           {others.length > 0 && (
             <ul className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" aria-label="Other contributors">
