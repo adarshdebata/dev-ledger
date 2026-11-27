@@ -19,6 +19,3 @@ next-env.d.ts
 Thumbs.db
 .vscode/
 .idea/
-
-# local Claude Code brief (not published)
-CLAUDE.md
