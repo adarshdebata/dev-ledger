@@ -142,8 +142,8 @@ export default function Home() {
         <div className="border-t border-line pt-10">
           <div className="flex items-baseline justify-between gap-4">
             <h2 className="eyebrow text-accent">Latest</h2>
-            <Link href="/series/" className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline">
-              View all articles <ArrowRight className="size-4" />
+            <Link href="/posts/" className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline">
+              All blogs <ArrowRight className="size-4" />
             </Link>
           </div>
           {latest.length > 0 ? (
