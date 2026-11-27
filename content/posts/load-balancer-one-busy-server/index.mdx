@@ -1,0 +1,305 @@
+---
+title: "Your Load Balancer Is Working. So Why Is One Server Doing All the Work?"
+subtitle: "We put three identical servers behind Nginx. A Node.js service sent 300 requests: two servers took 150 each, the third none. What a load balancer really spreads."
+date: 2026-11-28
+series: 2
+roadmap: [24]
+tags: [load-balancing, nginx, networking, debugging, http]
+author: adarshdebata
+thumb: balance
+summary: "A load balancer spreads either connections (L4) or requests (L7), and keep-alive makes the difference huge: through a TCP balancer, a client that reuses two connections only ever reaches two servers. Round robin ignores how busy a server is; least connections doesn't. Passive health checks use real users' requests as probes. And when the balancer keeps idle connections open longer than your app does, a request can land on a socket the app is closing: a rare, random 502."
+---
+
+**You use it every day. But do you actually know what happens underneath?** The [last post](/posts/502-bad-gateway/) put one proxy in front of one app. Real apps run several copies, and something has to decide which copy gets each request.
+
+The dashboard says the load balancer is healthy. All three servers pass their health checks. And yet one of them is at 90% CPU while the other two are bored. Or you scale from three servers to six, and the new ones sit idle while the old ones struggle. The load balancer isn't broken. It's doing exactly what it was built to do, which is often not what people think.
+
+## What you see
+
+- **Uneven load** across servers that are identical in every way.
+- **A new server that gets almost nothing** after you scale out.
+- **One slow server dragging everyone down**, though the balancer "knows" about all three.
+- **One unlucky request that takes 18 seconds** right after a server dies, and then everything's fine, until it happens again ten seconds later.
+- **Rare 502s on POST requests** that nobody can reproduce on purpose.
+
+We reproduced every one of these with Nginx as the load balancer and three identical Node.js servers in Docker. Start with the strangest:
+
+<Predict
+  question="A Node.js service calls another service through a TCP (L4) load balancer with three servers behind it. It sends 300 requests, one after another, with fetch. How do the requests spread?"
+  options={[
+    "100 / 100 / 100",
+    "150 / 150 / 0",
+    "300 / 0 / 0",
+    "Roughly random",
+  ]}
+  answer={1}
+>
+**150 / 150 / 0.** We ran it four times with 30 requests and once with 300; every run split evenly across two servers and gave the third nothing. Node's fetch kept two connections open and sent every request down one of them, and a TCP load balancer only chooses a server when a connection opens. The third server was healthy the whole time. It just never got a connection.
+</Predict>
+
+## What's underneath
+
+### What gets balanced: connections or requests
+
+A <Term id="load-balancer">load balancer</Term> works at one of two levels, and it matters more than any other setting:
+
+- **L4, the TCP level.** It sees connections and bytes, nothing more. When a connection opens, it picks a server, and every byte on that connection goes there for as long as the connection lives. It never reads HTTP, so it can't tell one request from the next. Nginx's `stream` module, AWS's Network Load Balancer and a Kubernetes Service all work like this.
+- **L7, the HTTP level.** It reads each request: method, path, headers. It can send every request somewhere different, even on one connection, route by URL, add `X-Forwarded-For`, and retry a failed request elsewhere. Nginx's `http` module and AWS's Application Load Balancer work like this.
+
+With one request per connection, you can't tell them apart. Real clients don't work like that: browsers, curl and Node's fetch all keep connections open and reuse them ([keep-alive, from the TCP & TLS post](/posts/tcp-and-tls-handshakes/)). Here's the same command through both kinds of balancer, six requests on one reused connection:
+
+```text title="curl with six URLs, one connection (real output, two runs)"
+L7, the http module:    app1 app2 app3 app1 app2 app3
+L4, the stream module:  app1 app1 app1 app1 app1 app1
+```
+
+curl confirmed it reused the connection (`Reusing existing http: connection with host 127.0.0.1`). The L7 balancer still spread the requests. The L4 balancer chose app1 when the connection opened, and that was that.
+
+### Where traffic piles up
+
+Anything that sends many requests over few connections concentrates its traffic behind an L4 balancer:
+
+- **A service calling a service**, with a connection pool. Our Node.js fetch test: 150 / 150 / 0.
+- **HTTP/2 and gRPC.** <Term id="http2">HTTP/2</Term> sends every request from one client over a **single** connection. Behind an L4 balancer, a whole client is one server's problem.
+- **WebSockets** and other long-lived connections, which stay on the server they started on.
+- **Scaling out.** A new server only gets *new* connections. Existing ones stay where they are until they close, so the busiest servers stay busy and the new one waits.
+
+When we let fetch send six requests at a time, it needed more connections to carry them, and the L4 balancer spread the requests 10 / 10 / 10. The spread follows the number of connections, not the number of requests. Press **Next** through each scenario:
+
+<BalancerFlow />
+
+### Round robin vs least connections
+
+Even an L7 balancer has to choose a server for each request. The two common rules:
+
+- <Term id="round-robin">Round robin</Term>: take turns. Simple, predictable, and blind to how busy each server is.
+- <Term id="least-connections">Least connections</Term>: send each request to the server with the fewest requests in progress.
+
+They only differ when servers differ. We made app2 slow, one second per response, and sent 60 requests, six at a time:
+
+```text title="60 requests, 6 at a time, app2 slow (real output, two runs)"
+round robin: {"app1":20,"app3":20,"app2":20}    real 0m5.722s
+least_conn:  {"app1":31,"app3":27,"app2":2}     real 0m1.789s
+```
+
+Round robin gave the slow server exactly a third of the work, so a third of the requests queued behind it. Least connections noticed app2 always had a request in flight and sent it almost nothing: the same batch finished three times faster. In Nginx it's one line, `least_conn;`, in the `upstream` block. Real slowness comes from garbage-collection pauses, a noisy neighbour on shared hardware, or one server with a cold cache, so this matters even when your servers are "identical".
+
+### How the balancer decides a server is dead
+
+A <Term id="health-check">health check</Term> comes in two kinds:
+
+- **Active**: the balancer sends its own test request on a timer, say `GET /health` every few seconds, and stops sending traffic to servers that fail. Cloud load balancers do this; so does Nginx Plus.
+- **Passive**: the balancer watches real requests, and marks a server as failed when they fail. This is what open-source Nginx does.
+
+Passive checks mean **your users are the probes**. We stopped app2 and watched:
+
+```text title="Requests after app2 stopped: status, time, server (real output)"
+200 0.071723s app1
+200 18.662643s app3
+200 0.009276s app3
+200 0.011101s app1
+```
+
+```text title="Nginx error log (real output, shortened)"
+[error] connect() failed (113: Host is unreachable) while connecting to upstream, upstream: "http://172.18.0.3:3000/"
+[warn] upstream server temporarily disabled while connecting to upstream, upstream: "http://172.18.0.3:3000/"
+```
+
+One request was sent to app2's address, where nothing answered. It waited **18.7 seconds** for the network to give up, then Nginx retried it on app3. That user got a 200, eventually. Nginx then skipped app2 for 10 seconds (`fail_timeout`, with `max_fails=1` by default), and gave it another chance with the next real request, which took 3.1 seconds. Until someone fixes app2, one user in every ten-second window pays. `proxy_connect_timeout 2s;` would have cut 18.7 seconds to two; active checks would have spared the user entirely.
+
+### What should /health check?
+
+A health endpoint that always returns 200 tells the balancer the process is running, not that it can do its job. But one that checks everything has its own trap: if `/health` fails whenever the shared database is slow, **every** server fails at once, the balancer has no healthy servers left, and a slow database becomes a total outage. We saw what that looks like when every server was marked as failed:
+
+```text title="Nginx error log (real output)"
+[error] no live upstreams while connecting to upstream, request: "POST /crash HTTP/1.1", upstream: "http://app_l7/crash"
+```
+
+The usual compromise: the health check covers what that one server controls, the process, its event loop, its own disk and memory. Problems with shared dependencies are better handled by the app itself, with timeouts and error responses, than by pulling every server out of rotation together.
+
+### Retries: helpful, until they aren't
+
+When a server fails mid-request, Nginx tries the next one, but only if the request is safe to repeat. We made every server hang up on `/crash`:
+
+```text title="One GET, three servers (real output, shortened)"
+*91 upstream prematurely closed connection -> http://172.18.0.4:3000/crash
+*91 upstream prematurely closed connection -> http://172.18.0.2:3000/crash
+*91 upstream prematurely closed connection -> http://172.18.0.3:3000/crash
+```
+
+One GET request, number 91, was sent to all three servers before Nginx gave up with a 502. If that GET had a side effect, it happened three times. A POST that failed the same way was tried on **one** server and came straight back as a 502: Nginx doesn't resend a request that might already have done something. That's the right default, and a good reason to keep GET requests free of side effects.
+
+### Sticky sessions
+
+A <Term id="sticky-session">sticky session</Term> sends each user to the same server every time, usually by setting a cookie. Teams turn it on when servers keep state in memory: logged-in sessions, an in-progress upload, a WebSocket's context. It works, but it brings back the problem this post is about: heavy users pin heavy load to one server, and when that server dies, its users lose whatever it held. Keeping session state in a shared store, like Redis or the database, makes any server able to serve any request, and makes stickiness unnecessary.
+
+### The keep-alive 502
+
+Balancers keep idle connections to your servers open, so the next request can skip the TCP handshake. Your app closes idle connections too, on its own timer. Node.js closes them after 5 seconds by default, and Node 24 adds a buffer:
+
+```text title="An http.Server's defaults in Node.js 24 (real output, shortened)"
+keepAliveTimeout 5000 keepAliveTimeoutBuffer 1000
+```
+
+Many balancers keep idle connections for 60 seconds. So at some point, the app decides a connection has been idle long enough and closes it at the very moment the balancer sends a new request down it. The request hits a closing socket. A GET might be retried; a POST isn't, and the user gets a 502.
+
+It's a race, so it's rare, and it's hard to catch on purpose. We set the app's timeout to 1 second (plus Node's 1-second buffer) and sent POSTs after idle gaps from 1,990 to 2,010 milliseconds:
+
+```text title="63 POSTs across the window (real output)"
+{"200":61,"502":2} failures at: 1990ms:502 1997ms:502
+[error] recv() failed (104: Connection reset by peer) while reading response header from upstream
+[error] upstream prematurely closed connection while reading response header from upstream
+```
+
+Two of 63 failed, both within a few milliseconds of the app's closing time, with two different log lines for the same race. The fix is to make sure the **balancer** gives up on idle connections first. We set `keepalive_timeout 500ms;` on the Nginx upstream, shorter than the app's two seconds, and ran the same sweep: 63 of 63 succeeded. With a cloud balancer you can't change as easily, do it the other way round: set your server's `keepAliveTimeout` above the balancer's idle timeout, and Node's `headersTimeout` above that.
+
+<Callout type="story" title="Think of it like this">
+An L7 load balancer is a host at a restaurant seating each party as it arrives. An L4 balancer is a host who assigns each *table* a waiter when the table is first taken, and never again: if one big group keeps the same table all evening and orders round after round, the same waiter serves every round while the others stand around. Least connections is a host who glances at how busy each waiter is before seating anyone.
+</Callout>
+
+## What breaks
+
+| What you see | What's really happening | Fix |
+| --- | --- | --- |
+| One server busy, others idle | An L4 balancer pins connections; a few clients reuse a few connections | Use an L7 balancer for HTTP, or make clients open more connections |
+| New servers idle after scaling out | Existing long-lived connections stay where they are | Cap connection lifetime or requests per connection so clients reconnect |
+| gRPC or HTTP/2 traffic all on one pod | One multiplexed connection per client, behind an L4 balancer | L7 (HTTP/2-aware) balancing, or client-side balancing |
+| One slow server slows everyone | Round robin keeps giving it its turn | `least_conn`; find out why that server is slow |
+| An 18-second request after a server dies | Passive health checks: a real request discovers the dead server | Short `proxy_connect_timeout`; active health checks |
+| `no live upstreams` | Every server is marked failed, often all at once | Don't fail health checks for shared dependencies |
+| A side effect happened three times | A failed GET was retried on every server | Keep GETs safe to repeat; idempotency keys for writes |
+| Rare 502s on POSTs | The app closed an idle connection as the balancer reused it | Balancer idle timeout shorter than the app's keep-alive timeout |
+
+## Field notes: when one server does all the work
+
+<Steps>
+<Step title="Count requests per server, then connections per server">
+Your metrics or access logs, grouped by instance, show the request split. Then count open connections on each server: `ss -tn state established '( sport = :3000 )' | wc -l` on Linux. Even requests with very uneven connections, or the other way round, tells you which layer the problem lives in.
+</Step>
+<Step title="Find out what layer your balancer works at">
+Does it add `X-Forwarded-For`? Can it route by path? Then it reads HTTP, L7. If it only forwards TCP, it balances connections, and the questions are about who holds connections open, and for how long.
+</Step>
+<Step title="Check the keep-alive settings at every hop">
+Write down each hop's idle timeout: CDN, load balancer, proxy, app. Each one should be **shorter than the next hop's**, so connections are always closed from the side that would otherwise send on them. In Node.js, that's `server.keepAliveTimeout` and `server.headersTimeout`.
+</Step>
+<Step title="Time a failover before production does">
+Stop one server while sending steady traffic, and record every request's duration. Our first try gave an 18.7-second request. Then set `proxy_connect_timeout`, `max_fails` and `fail_timeout`, or switch on active health checks, and measure again.
+</Step>
+<Step title="Read the health check's code">
+Does it test something real, but only what this one server owns? Would a slow database make every server fail it at once? Would it pass while the server is unable to serve requests?
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"The load balancer spreads requests evenly."** An L4 balancer spreads connections. With keep-alive, HTTP/2 or WebSockets, that can be very uneven.
+
+**"Round robin is fair."** It's fair in count, not in work. A slow server gets the same share as a fast one.
+
+**"Health checks mean users never hit a dead server."** With passive checks, a user's request is how the balancer finds out.
+
+**"Adding servers spreads the load immediately."** Only new connections go to new servers.
+
+**"A 502 from the load balancer means the app crashed."** It can be a perfectly healthy app closing an idle connection at the wrong millisecond.
+
+**"Retries make things more reliable."** They do, for requests that are safe to repeat. Our GET ran on three servers.
+
+## Summary
+
+<FiveQuestions
+  problem="One server can't take all the traffic, and any server can fail. A load balancer spreads work across several copies of your app and keeps traffic away from the ones that are down."
+  sees="Uneven load across identical servers, idle servers after scaling out, a slow server dragging everyone down, very slow requests right after a server dies, `no live upstreams`, and rare 502s on POSTs."
+  underneath="L4 balancers choose a server per connection, L7 balancers per request. Round robin takes turns; least connections favours idle servers. Passive health checks mark a server failed after a real request fails, then retry it after fail_timeout. Idle keep-alive connections are closed by whichever side's timer runs out first."
+  breaks="Connection pinning with keep-alive, HTTP/2, gRPC and WebSockets; round robin feeding slow servers; users acting as health-check probes; health checks that fail everywhere at once; retried GETs with side effects; and the keep-alive race when the app closes connections first."
+  misconception="That balancers spread requests evenly, that round robin is fair, that health checks protect every user, that new servers take load at once, that a 502 means a crash, and that retries are always safe."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "What does an L4 (TCP) load balancer choose a server for?",
+      options: ["Each HTTP request", "Each connection, once, when it opens", "Each user", "Each packet"],
+      answer: 1,
+      why: "It never reads HTTP, so it can't tell requests apart. Every byte on a connection goes to the same server.",
+    },
+    {
+      q: "Six requests over one kept-alive connection through an L4 balancer reached which servers?",
+      options: ["All three, in turn", "Only app1", "A random server each time", "None: L4 doesn't support keep-alive"],
+      answer: 1,
+      why: "The server was chosen when the connection opened. Through the L7 balancer, the same six requests rotated.",
+    },
+    {
+      q: "Why did 300 fetch requests split 150 / 150 / 0 through the L4 balancer?",
+      options: ["app3 was down", "fetch reused two connections, so only two servers were ever chosen", "Round robin skips every third server", "The balancer was misconfigured"],
+      answer: 1,
+      why: "Connections, not requests, were balanced. With six concurrent requests, fetch opened six connections and the split became 10 / 10 / 10.",
+    },
+    {
+      q: "One server is slow. Which algorithm sends it less work?",
+      options: ["Round robin", "Least connections", "Both equally", "Neither"],
+      answer: 1,
+      why: "It had a request in flight most of the time, so least_conn sent it 2 of 60 instead of 20, and the batch finished in 1.8 s instead of 5.7 s.",
+    },
+    {
+      q: "With open-source Nginx's passive health checks, how does a dead server get noticed?",
+      options: ["Nginx pings it every second", "A real request to it fails; then Nginx skips it for fail_timeout and tries again with another real request", "Docker tells Nginx", "It's never noticed"],
+      answer: 1,
+      why: "In our test one user waited 18.7 s, then, ten seconds later, another waited 3.1 s.",
+    },
+    {
+      q: "A failed GET and a failed POST: what did Nginx retry?",
+      options: ["Both, on every server", "The GET on every server; the POST on none", "Only the POST", "Neither"],
+      answer: 1,
+      why: "Nginx doesn't resend requests that may have had an effect. The GET reached all three servers.",
+    },
+    {
+      q: "What causes the rare keep-alive 502?",
+      options: ["Too many requests", "The app closes an idle connection at the moment the balancer reuses it", "DNS changes", "TLS errors"],
+      answer: 1,
+      why: "Two timers on one connection. The fix: the balancer's idle timeout must be shorter than the app's.",
+    },
+    {
+      q: "Why can a health check that tests the shared database cause a total outage?",
+      options: ["It's too slow", "When the database is slow, every server fails the check at once and the balancer has no servers left", "It locks the database", "It doesn't; that's the safest check"],
+      answer: 1,
+      why: "That's \"no live upstreams\": nothing to send traffic to, even though the servers could have answered some requests.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="What's the difference between L4 and L7 load balancing?">
+L4 balancers work at the transport layer: they see TCP connections and choose a backend when a connection is established, forwarding bytes without understanding them. They're fast and protocol-agnostic, but with keep-alive, HTTP/2 or long-lived connections, traffic follows connections, not requests. L7 balancers terminate HTTP, see each request, and can route by host, path or headers, balance per request, add forwarding headers, retry and do TLS termination, at more cost per request.
+</Question>
+<Question q="Traffic is uneven across identical backends. How do you investigate?">
+Compare requests and connections per backend. If connections are uneven, look at who holds long-lived connections: connection pools, HTTP/2 or gRPC clients, WebSockets, and whether instances were added recently (old connections stay put). If the balancer is L4, that alone explains a lot; switch to L7 for HTTP, cap connection lifetimes or requests per connection, or balance client-side. If requests are even but load isn't, look at per-request cost and slow instances, and consider least connections.
+</Question>
+<Question q="Explain active vs passive health checks and their trade-offs.">
+Active checks send synthetic requests on a schedule, so failures are found without user impact, but they cost traffic and only test what the endpoint tests. Passive checks infer health from real traffic: no extra requests, but a real request has to fail first, and if the failure is a timeout it can be slow. Open-source Nginx uses passive checks via max_fails and fail_timeout; tuning proxy_connect_timeout limits how long the unlucky request waits.
+</Question>
+<Question q="What should a health check endpoint check?">
+Enough to show the instance can do its job, limited to what that instance controls: the process is responsive, the event loop isn't stalled, local resources are fine. Failing it on shared dependencies like the database can take every instance out of rotation at once, turning partial degradation into a full outage. Dependency problems are usually better handled with timeouts, circuit breaking and error responses, with separate readiness and liveness checks where the platform supports them.
+</Question>
+<Question q="What causes intermittent 502s behind a load balancer even though the app is healthy?">
+Commonly the idle keep-alive race: the balancer keeps idle upstream connections longer than the app does, so the app closes a connection just as the balancer sends a request on it, and the request gets a reset or an early close. Non-idempotent requests aren't retried, so the client sees a 502. Fix by making the app's keep-alive timeout longer than the balancer's idle timeout (and headersTimeout longer still in Node.js), or the proxy's upstream keepalive_timeout shorter than the app's.
+</Question>
+<Question q="Why are sticky sessions often discouraged?">
+They pin users to instances, so load follows heavy users, scaling out doesn't rebalance existing users, and when an instance dies its users lose in-memory state anyway. They're a workaround for servers holding session state locally. Moving that state to a shared store makes instances interchangeable, so any balancer algorithm works and failover is clean.
+</Question>
+</Interview>
+
+## What's next
+
+There's one more layer between your servers and your users, and it doesn't forward requests at all when it can avoid it: it answers them itself, from copies. That's wonderful until you deploy a fix. Next: **Your Fix Is Live. Why Do Users Still See the Old Version?** [Read it now](/posts/why-users-see-the-old-version/), or [see everything in Week 2](/#this-week).
+
+### Sources and further reading
+
+- Nginx docs: [the upstream module](https://nginx.org/en/docs/http/ngx_http_upstream_module.html): `least_conn`, `max_fails`, `fail_timeout`, `keepalive` and `keepalive_timeout`
+- Nginx docs: [ngx_stream_proxy_module](https://nginx.org/en/docs/stream/ngx_stream_proxy_module.html), TCP (L4) proxying, and [proxy_next_upstream](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_next_upstream) for which requests are retried
+- Node.js docs: [server.keepAliveTimeout](https://nodejs.org/api/http.html#serverkeepalivetimeout) and [server.headersTimeout](https://nodejs.org/api/http.html#serverheaderstimeout)
+- AWS docs: [Application Load Balancer connection idle timeout](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/edit-load-balancer-attributes.html#connection-idle-timeout)
+- RFC 9113: [HTTP/2](https://www.rfc-editor.org/rfc/rfc9113), one connection carrying many streams

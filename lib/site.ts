@@ -114,6 +114,7 @@ export const weeks: Week[] = [
       {
         day: 6,
         title: "Your Load Balancer Is Working. So Why Is One Server Doing All the Work?",
+        slug: "load-balancer-one-busy-server",
         about:
           "What a load balancer actually spreads (connections or requests), how health checks pick who gets traffic, and why keep-alive, WebSockets and sticky sessions leave one server busy and another idle.",
       },
