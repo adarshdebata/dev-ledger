@@ -33,7 +33,7 @@ export type PostMeta = {
   readingMinutes: number;
 };
 
-export const THUMBS = ["journey", "origins", "shield", "lookup", "ids", "handshake", "headers", "ports"] as const;
+export const THUMBS = ["journey", "origins", "shield", "lookup", "ids", "handshake", "headers", "ports", "tree", "climb", "lock", "deps", "gateway", "balance", "edge"] as const;
 export type Thumb = (typeof THUMBS)[number];
 
 export type Post = PostMeta & { source: string };

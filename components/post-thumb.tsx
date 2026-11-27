@@ -4,7 +4,7 @@ import type { PostMeta, Thumb } from "@/lib/posts";
  * Small animated SVG thumbnails in the theme's colours. They sit still until the card around them
  * (a `.group`) is hovered or focused, and never move under reduced motion. See ".thumb" in globals.css.
  */
-export type Motif = Thumb | "deps";
+export type Motif = Thumb;
 
 export function thumbFor(post: Pick<PostMeta, "thumb" | "tags">): Motif {
   if (post.thumb) return post.thumb;
@@ -193,6 +193,138 @@ const MOTIFS: Record<Motif, React.ReactNode> = {
       <path d="M8 34 H31 M41 34 Q70 34 100 50" strokeWidth="1.8" fill="none" strokeDasharray="4 4" className="thumb-flow stroke-accent-soft" />
       <path d="M8 68 H24" strokeWidth="1.8" strokeLinecap="round" className="stroke-bad" />
       <path d="M22 63 l6 10 m0 -10 l-6 10" strokeWidth="1.6" strokeLinecap="round" className="thumb-pulse stroke-bad" />
+    </>
+  ),
+  // One line in package.json fans out into a tree of packages; each one travels down to node_modules.
+  tree: (
+    <>
+      <rect x="66" y="8" width="28" height="12" rx="4" strokeWidth="1.5" className="fill-accent-tint stroke-accent-soft" />
+      {[18, 56, 94, 132].map((x, i) => (
+        <g key={x}>
+          <path d={`M80 20 L${x + 5} 34`} strokeWidth="1.2" className="stroke-line-strong" />
+          <rect x={x - 5} y="34" width="20" height="10" rx="3" strokeWidth="1.5" className="thumb-slide fill-card stroke-teal-soft" style={{ animationDelay: `${i * 0.12}s` }} />
+          {[-7, 7].map((dx, j) => (
+            <g key={dx}>
+              <path d={`M${x + 5} 44 L${x + 5 + dx} 56`} strokeWidth="1" strokeDasharray="2.5 2.5" className="thumb-flow stroke-line-strong" />
+              <circle cx={x + 5 + dx} cy="59" r="3" className={`thumb-pulse ${(i + j) % 3 === 0 ? "fill-accent-soft" : "fill-teal-soft/70"}`} style={{ animationDelay: `${(i * 2 + j) * 0.1}s` }} />
+            </g>
+          ))}
+        </g>
+      ))}
+      <line x1="14" y1="82" x2="146" y2="82" strokeWidth="1.5" className="stroke-line-strong" />
+      {[14, 80, 146].map((x, i) => (
+        <rect key={x} x={x - 6} y="76" width="12" height="12" rx="3" strokeWidth="1.5" className={`fill-card ${i === 2 ? "stroke-fg" : "stroke-teal-soft"}`} />
+      ))}
+      <circle cx="14" cy="82" r="3" className="thumb-packet fill-accent-soft" />
+    </>
+  ),
+  // require() climbs from the deepest folder up, checking each node_modules until one has the package.
+  climb: (
+    <>
+      {(
+        [
+          [12, 14, "stroke-line-strong"],
+          [28, 40, "stroke-line-strong"],
+          [44, 66, "stroke-line-strong"],
+        ] as const
+      ).map(([x, y, c]) => (
+        <g key={y}>
+          <path d={`M${x} ${y + 4} h8 l3 -3 h${92 - x} v18 h-${103 - x} z`} strokeWidth="1.5" strokeLinejoin="round" className={`fill-card ${c}`} />
+          <rect x="116" y={y + 3} width="30" height="12" rx="3" strokeWidth="1.5" strokeDasharray={y === 14 ? undefined : "3 2.5"} className={y === 14 ? "fill-ok/15 stroke-ok" : "fill-card stroke-line-strong"} />
+        </g>
+      ))}
+      <path d="M131 86 V29" strokeWidth="1.8" strokeDasharray="4 3" className="thumb-flow stroke-accent-soft" />
+      <circle cx="131" cy="90" r="4" className="fill-accent-soft" />
+      {[49, 75].map((y) => (
+        <path key={y} d={`M150 ${y - 3} l6 6 m0 -6 l-6 6`} strokeWidth="1.6" strokeLinecap="round" className="stroke-bad" />
+      ))}
+      <path d="M149 23 l3 3 6 -6" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" className="thumb-pulse stroke-ok" />
+    </>
+  ),
+  // Version ranges on one side, exact pinned versions on the other, held by a lock.
+  lock: (
+    <>
+      <rect x="10" y="16" width="56" height="68" rx="6" strokeWidth="1.5" className="fill-card stroke-line-strong" />
+      {[30, 22, 34, 26].map((w, i) => (
+        <g key={i}>
+          <rect x="18" y={28 + i * 13} width="6" height="4" rx="2" className="fill-teal-soft" />
+          <rect x="27" y={28 + i * 13} width={w} height="4" rx="2" className="fill-line-strong" />
+        </g>
+      ))}
+      <path d="M70 50 H88" strokeWidth="1.8" strokeDasharray="4 3" className="thumb-flow stroke-accent-soft" />
+      <rect x="94" y="16" width="56" height="68" rx="6" strokeWidth="1.5" className="fill-card stroke-accent-soft" />
+      {[34, 26, 38, 30].map((w, i) => (
+        <rect key={i} x="102" y={28 + i * 13} width={w} height="4" rx="2" className="thumb-slide fill-accent-soft/70" style={{ animationDelay: `${i * 0.12}s` }} />
+      ))}
+      <g className="thumb-pulse">
+        <rect x="132" y="62" width="14" height="11" rx="2.5" className="fill-accent-soft" />
+        <path d="M135 62v-3a4 4 0 0 1 8 0v3" fill="none" strokeWidth="1.8" className="stroke-accent-soft" />
+      </g>
+    </>
+  ),
+  // Browser, proxy, app: the hop behind the proxy breaks, and the proxy answers for it.
+  gateway: (
+    <>
+      {(
+        [
+          [8, "stroke-line-strong"],
+          [62, "stroke-accent-soft"],
+          [116, "stroke-line-strong"],
+        ] as const
+      ).map(([x, c]) => (
+        <rect key={x} x={x} y="30" width="36" height="40" rx="6" strokeWidth="1.5" className={`fill-card ${c}`} />
+      ))}
+      {[40, 48, 56].map((y) => (
+        <rect key={y} x="69" y={y} width="22" height="3.5" rx="1.75" className="fill-accent-soft/60" />
+      ))}
+      <path d="M44 44 H62" strokeWidth="1.8" strokeDasharray="4 3" className="thumb-flow stroke-teal-soft" />
+      <path d="M62 58 H44" strokeWidth="1.8" className="stroke-bad" />
+      <path d="M48 54 l-4 4 4 4" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" className="stroke-bad" />
+      <path d="M98 50 H116" strokeWidth="1.8" strokeDasharray="3 4" className="stroke-line-strong" />
+      <g className="thumb-pulse">
+        <circle cx="107" cy="50" r="7" strokeWidth="1.5" className="fill-card stroke-bad" />
+        <path d="M104 47l6 6m0-6l-6 6" strokeWidth="1.6" strokeLinecap="round" className="stroke-bad" />
+      </g>
+    </>
+  ),
+  // A balancer and three servers: one server's load bar is full, the others sit almost empty.
+  balance: (
+    <>
+      <circle cx="30" cy="50" r="13" strokeWidth="1.5" className="fill-card stroke-accent-soft" />
+      <path d="M24 50 h12 M32 46 l4 4 -4 4" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" className="stroke-accent-soft" />
+      {(
+        [
+          [18, 60, "stroke-accent-soft", 2.4, undefined],
+          [44, 14, "stroke-line-strong", 1.2, "3 3"],
+          [70, 8, "stroke-line-strong", 1.2, "3 3"],
+        ] as const
+      ).map(([y, w, c, sw, dash]) => (
+        <g key={y}>
+          <path d={`M43 50 L96 ${y + 9}`} strokeWidth={sw} strokeDasharray={dash} className={`${dash ? "" : "thumb-flow"} ${c}`} />
+          <rect x="96" y={y} width="56" height="18" rx="4" strokeWidth="1.5" className="fill-card stroke-line-strong" />
+          <rect x="101" y={y + 6} width={w * 0.77} height="6" rx="3" className={`thumb-grow ${w > 30 ? "fill-accent-soft" : "fill-teal-soft/60"}`} />
+        </g>
+      ))}
+    </>
+  ),
+  // Users get answers from a nearby edge copy; only a miss travels on to the origin.
+  edge: (
+    <>
+      {[30, 70].map((y) => (
+        <circle key={y} cx="16" cy={y} r="6" strokeWidth="1.5" className="fill-card stroke-line-strong" />
+      ))}
+      <rect x="56" y="24" width="44" height="52" rx="8" strokeWidth="1.5" className="fill-card stroke-teal-soft" />
+      {[36, 46, 56].map((y, i) => (
+        <rect key={y} x="64" y={y} width="28" height="5" rx="2.5" className={i === 2 ? "fill-line-strong" : "fill-teal-soft/70"} />
+      ))}
+      <path d="M22 30 H56 M56 70 H22" strokeWidth="1.8" strokeDasharray="4 3" className="thumb-flow stroke-ok" />
+      <rect x="124" y="30" width="28" height="40" rx="5" strokeWidth="1.5" className="fill-card stroke-fg" />
+      {[40, 48, 56].map((y) => (
+        <rect key={y} x="130" y={y} width="16" height="3.5" rx="1.75" className="fill-line-strong" />
+      ))}
+      <path d="M100 50 H124" strokeWidth="1.5" strokeDasharray="2 4" className="stroke-line-strong" />
+      <circle cx="78" cy="84" r="5" strokeWidth="1.5" className="thumb-pulse fill-card stroke-accent-soft" />
+      <path d="M78 81.5 V84 H80" strokeWidth="1.3" fill="none" strokeLinecap="round" className="stroke-accent-soft" />
     </>
   ),
   // A project, its packages, and the one shared store they all link into.
