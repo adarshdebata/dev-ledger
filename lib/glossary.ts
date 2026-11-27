@@ -335,6 +335,122 @@ export const glossary = {
     term: "Upsert",
     def: "Update or insert: a write that adds the row if its key is new, and quietly replaces the old row if the key already exists. No error either way.",
   },
+  registry: {
+    term: "npm registry",
+    def: "The server npm downloads packages from, registry.npmjs.org unless you change it. For every package it keeps one metadata document listing all its versions, plus one tarball per version.",
+  },
+  "version-range": {
+    term: "Version range",
+    def: "What package.json usually holds instead of a version. ^5.1.0 means 5.1.0 or any newer 5.x; ~5.1.0 means any newer 5.1.x. npm installs the newest version that matches.",
+  },
+  "transitive-dependency": {
+    term: "Transitive dependency",
+    def: "A package you never asked for, installed because a package you did ask for needs it, or needs something that needs it, and so on down the tree.",
+  },
+  tarball: {
+    term: "Tarball",
+    def: "A compressed .tgz archive holding the files of one version of one package. It's what npm actually downloads and unpacks.",
+  },
+  integrity: {
+    term: "Integrity hash",
+    def: "A sha512 fingerprint of a tarball's bytes, written into the lockfile. npm recomputes it after every download and refuses a file that doesn't match.",
+  },
+  lockfile: {
+    term: "Lockfile",
+    def: "package-lock.json, or pnpm-lock.yaml for pnpm: the exact version, download address and integrity hash of every package in the tree, so the next install builds the same tree.",
+  },
+  "install-script": {
+    term: "Install script",
+    def: "A command a package asks to run while it's being installed (preinstall, install or postinstall), often to download or compile a native binary. It runs with your user's permissions.",
+  },
+  "peer-dependency": {
+    term: "Peer dependency",
+    def: "A package saying “I work with your copy of X” instead of bringing its own, as react-dom does with react. If the versions disagree, npm stops with ERESOLVE.",
+  },
+  hoisting: {
+    term: "Hoisting",
+    def: "Putting a dependency in the top-level node_modules instead of inside the package that needs it, so that everyone who needs that version can share one copy.",
+  },
+  "phantom-dependency": {
+    term: "Phantom dependency",
+    def: "A package your code requires without listing it in package.json. It only works because something else installed it, in a place your code happens to search.",
+  },
+  symlink: {
+    term: "Symbolic link",
+    def: "A file-system entry that points to another path, like a shortcut that programs follow automatically. On Windows, pnpm uses junctions, a kind of folder link.",
+  },
+  "hard-link": {
+    term: "Hard link",
+    def: "A second name for the same file on disk. Both names share one copy of the bytes, so the file takes up space only once, however many names it has.",
+  },
+  "content-addressable-store": {
+    term: "Content-addressable store",
+    def: "A folder that stores each file under a name made from a hash of its contents. Identical files, from any package or any project, are stored exactly once.",
+  },
+  "reverse-proxy": {
+    term: "Reverse proxy",
+    def: "A server in front of your app that receives requests meant for it, passes them on, and sends the answers back. Nginx is the common one.",
+  },
+  "forward-proxy": {
+    term: "Forward proxy",
+    def: "A proxy that works for the client side: your browser or your company's network sends outgoing requests through it. A reverse proxy works for the server side.",
+  },
+  upstream: {
+    term: "Upstream",
+    def: "Nginx's word for the server it passes requests on to. Usually that's your app.",
+  },
+  websocket: {
+    term: "WebSocket",
+    def: "A connection that starts as an ordinary HTTP request, then stays open so that either side can send messages at any time.",
+  },
+  "health-check": {
+    term: "Health check",
+    def: "How a load balancer decides whether a server should get traffic: a test request it sends on a timer (active), or watching real requests fail (passive).",
+  },
+  "round-robin": {
+    term: "Round robin",
+    def: "Taking turns: the first request goes to server 1, the next to server 2, and so on, without looking at how busy each server is.",
+  },
+  "least-connections": {
+    term: "Least connections",
+    def: "Sending each new request to the server with the fewest requests in progress, so a slow or busy server automatically gets less work.",
+  },
+  "sticky-session": {
+    term: "Sticky session",
+    def: "A load balancer setting that sends the same user to the same server every time, usually by setting a cookie on the first response.",
+  },
+  edge: {
+    term: "Edge server",
+    def: "A CDN server close to the user. It answers from its own cached copy when it has a usable one, and asks your server when it doesn't.",
+  },
+  "origin-server": {
+    term: "Origin server",
+    def: "In CDN terms, your own server: the place the CDN fetches a page from when its copy is missing or too old.",
+  },
+  "cache-key": {
+    term: "Cache key",
+    def: "What a cache uses to decide whether two requests want the same thing. Usually the host and the path, sometimes the query string and a few headers too.",
+  },
+  purge: {
+    term: "Purge",
+    def: "Telling a CDN to throw away its copies of some URLs right now, instead of waiting for them to expire.",
+  },
+  immutable: {
+    term: "immutable",
+    def: "A Cache-Control instruction: this file will never change at this address, so don't even ask. Meant for files whose names contain a hash of their contents.",
+  },
+  "s-maxage": {
+    term: "s-maxage",
+    def: "Like max-age, but only for shared caches such as CDNs. It lets the CDN keep a copy for a different time than browsers do.",
+  },
+  "age-header": {
+    term: "Age",
+    def: "A response header saying how many seconds ago the cache got its copy from the origin. Age: 0 means fresh from your server.",
+  },
+  revalidation: {
+    term: "Revalidation",
+    def: "Asking the server “has this changed since my copy?”, with If-None-Match or If-Modified-Since. If it hasn't, the answer is 304 Not Modified, with no body.",
+  },
 } as const;
 
 export type GlossaryId = keyof typeof glossary;
