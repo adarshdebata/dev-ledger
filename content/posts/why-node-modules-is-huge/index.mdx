@@ -1,0 +1,328 @@
+---
+title: "Why Is node_modules So Huge? And How Does require() Find Anything in It?"
+subtitle: "Five dependencies, 415 MB, 15,725 files. Where the weight comes from, why one package sits on disk four times, and how require() finds anything at all."
+date: 2026-11-28
+series: 2
+roadmap: [36]
+tags: [npm, nodejs, packages, debugging, node-modules]
+author: adarshdebata
+thumb: climb
+summary: "node_modules is huge for four measurable reasons: transitive dependencies, native binaries for your platform, packages that ship bundles and source maps, and duplicate copies npm can't share. require() finds packages by climbing from the calling file's folder through every parent node_modules, and the first match wins. That rule explains duplicates, phantom dependencies that work by accident, and packages loaded from outside your project."
+---
+
+**You use it every day. But do you actually know what happens underneath?** In the [last post](/posts/you-ran-npm-install/), npm turned one line of `package.json` into 65 packages. This one opens the folder it put them in.
+
+Everyone has a joke about `node_modules`: heavier than a black hole, the reason the laptop fan spins. But almost nobody can say *why* it's that big, or how Node.js finds one package among hundreds. Both answers come from the same few rules, and once you know them, a whole family of "works on my machine" bugs makes sense.
+
+## What you see
+
+We measured a fresh install of five common packages, `next`, `react`, `react-dom`, `typescript` and `jest`:
+
+```text title="Terminal (real output)"
+$ du -sh node_modules
+415M    node_modules
+
+$ find node_modules -type f | wc -l
+15725
+```
+
+Five names in `package.json`. 380 packages in the lockfile. And when you look closer, things that make no sense at first:
+
+- **One package, four times.** In a small Express 4 project, `npm ls debug` showed the same version, `debug@2.6.9`, installed in four different folders.
+- **A require that shouldn't work.** Your code calls `require('debug')`, debug isn't in your `package.json`, and it works anyway.
+- **A require that should work.** After `npm uninstall debug`, the four copies are still on disk, but `require('debug')` from your code fails.
+
+Before reading on:
+
+<Predict
+  question="Your package.json lists only express@4. Your code calls require('debug'). What happens?"
+  options={[
+    "Error: debug isn't installed",
+    "It works, and you get whichever debug npm happened to put at the top of node_modules",
+    "npm installs debug automatically",
+    "It works only in production builds",
+  ]}
+  answer={1}
+>
+**It works.** express 4 depends on debug 2.6.9, npm put that copy at the top of `node_modules`, and Node.js searches there. We tried it: the undeclared `require('debug')` returned 2.6.9. That's a phantom dependency, and the rest of this post explains exactly why it happens.
+</Predict>
+
+## What's underneath
+
+### Why it's so big: four reasons we could measure
+
+We sorted that 415 MB folder by size. Four things fill it.
+
+**1. Dependencies of dependencies.** Five direct dependencies became 380 packages. Most of `node_modules` is code you never chose, there because something you chose needs it.
+
+**2. Native binaries, one per platform.** The biggest folders weren't JavaScript at all:
+
+```text title="du -sh, largest entries (real output, with notes)"
+202.1 MB  node_modules/next
+105.2 MB  node_modules/@next        # @next/swc-win32-x64-msvc: a compiled binary
+ 27.4 MB  node_modules/@typescript  # @typescript/typescript-win32-x64
+ 19.0 MB  node_modules/@img         # sharp's image library for Windows
+ 10.0 MB  node_modules/@babel
+```
+
+Next.js's compiler, TypeScript 7 and the image library `sharp` are native programs. Each is published as a separate package per operating system and CPU, listed as optional dependencies with `os` and `cpu` fields, so npm installs only the one that matches your machine. On a Linux CI runner, `@next/swc-linux-x64-gnu` is installed instead. That's why copying `node_modules` from a Mac or Windows laptop into a Linux Docker image breaks: the binary in it is for the wrong platform.
+
+**3. Packages ship much more than their code.** Inside `next` itself, `dist/compiled` is 133 MB of other libraries, pre-bundled into the package. And the package holds **2,751 source map files, 100 MB on their own**. Many packages ship two builds (CommonJS and ES modules), TypeScript types, READMEs and changelogs too.
+
+**4. Copies that can't be shared.** Two versions of one package can't live in one folder called `debug`. When packages disagree about versions, npm installs extra copies, and the same version can end up on disk several times. That one takes a little longer to explain, and it's where `require()` comes in.
+
+### How require() finds a package
+
+When your code calls `require('debug')`, Node.js asks three questions in order:
+
+1. Is it a built-in module, like `fs` or `path`? Then that's the answer.
+2. Does it start with `./`, `../` or `/`? Then it's a file path, relative to the calling file.
+3. Otherwise it's a package name, and Node goes looking for a folder called `node_modules/debug`, **starting in the folder of the file that called `require`**, then the parent folder, then its parent, all the way up to the root of the drive.
+
+Node will tell you the exact list of folders it checks. This is `module.paths` from `src/routes/where.js` in a project called `shop-api`:
+
+```text title="module.paths (real output, middle shortened)"
+~/shop-api/src/routes/node_modules
+~/shop-api/src/node_modules
+~/shop-api/node_modules
+…one entry for every parent folder…
+C:/Users/node_modules
+C:/node_modules
+```
+
+The **first** folder that contains the package wins. Node then reads that package's `package.json` to find the file to load, its `exports` or `main` field, and stops looking. Press **Next** to watch the search, then switch modes to see how npm decides where each copy goes:
+
+<RequireWalk />
+
+### Same name, different file
+
+That "start from the calling file" rule is what lets two versions coexist. From your code, `require('debug')` finds the top-level copy. From inside express, the same call finds express's private copy first:
+
+```text title="node src/routes/where.js (real output, paths relative to the project)"
+require.resolve('debug') from the project: node_modules/debug/src/index.js
+require.resolve('debug') from express: node_modules/express/node_modules/debug/src/index.js
+```
+
+Your code gets debug 4.4.3; express gets 2.6.9, the version it asked for. Each package sees the dependencies it declared, as long as they're placed correctly. And they really are separate: we checked, and the two `require` results are different objects. Any state a library keeps in memory, a cache, a registry of plugins, a class used with `instanceof`, now exists twice.
+
+<Callout type="insight" title="Why two copies of React break hooks">
+This is the mechanism behind React's "Invalid hook call" error when a project ends up with two copies of `react`: a component imports one copy, the renderer uses the other, and the hook state lives in the wrong one. React's own docs list "more than one copy of React in the same app" as a cause. `npm ls react` shows whether you have it.
+</Callout>
+
+### Hoisting: npm's placement rule
+
+In the very early days, npm nested every package inside the package that needed it, `node_modules/a/node_modules/b/node_modules/c`, and paths got so deep that Windows couldn't delete them. Since npm 3, it <Term id="hoisting">hoists</Term> instead: each package goes as high in the tree as it can without clashing with another version of the same name. Most packages land side by side at the top, where everyone can share one copy.
+
+A clash is where copies come from. We installed `express@4` and `debug@4` together:
+
+```text title="npm ls debug (real output)"
+shop-api@1.0.0
++-- debug@4.4.3
+`-- express@4.22.3
+  +-- body-parser@1.20.9
+  | `-- debug@2.6.9
+  +-- debug@2.6.9
+  +-- finalhandler@1.3.2
+  | `-- debug@2.6.9
+  `-- send@0.19.2
+    `-- debug@2.6.9
+```
+
+You asked for debug 4, so 4.4.3 took the top slot. express and three of its dependencies each need 2.6.9, and the slot was taken, so each of them got a private copy: **the same version, four times on disk**. It goes one level further. debug 2.6.9 needs `ms` 2.0.0, while the top `ms` is 2.1.3, so 2.0.0 was copied next to each old debug. Under `send` it went one level deeper still, into `send/node_modules/debug/node_modules/ms`, because `send` itself needs ms 2.1.3, and a 2.0.0 in send's own folder would have hidden it from send.
+
+### Phantom dependencies
+
+Hoisting has a side effect. Because most packages sit at the top of `node_modules`, **your** code can require any of them, declared or not. That's a <Term id="phantom-dependency">phantom dependency</Term>.
+
+We watched one appear. After `npm uninstall debug`, the top slot was empty and `require('debug')` from our code failed, although four copies were still on disk. Then:
+
+```text title="Terminal (real output)"
+$ npm dedupe
+added 2 packages, and removed 8 packages in 3s
+
+$ node -p "require('debug/package.json').version"
+2.6.9
+```
+
+`npm dedupe` noticed the free slot, moved one copy of debug 2.6.9 to the top (with the `ms` 2.0.0 it needs tucked inside it) and deleted the four private copies of each. Smaller install, and now `require('debug')` works again, from a `package.json` that doesn't mention debug at all. Your code is quietly relying on express's choices. The day express drops debug or moves to a different version, your app breaks, and your diff shows nothing.
+
+### The search doesn't stop at your project
+
+The climb only stops at the root of the drive. So a `node_modules` folder in **any parent folder** is part of every search below it. We put a package called `stray-helper` in a parent folder's `node_modules` and required it from inside the project:
+
+```text title="Terminal (real output)"
+$ node stray.js
+found in a parent folder -> ..\node_modules\stray-helper\index.js
+```
+
+Then we deleted that folder:
+
+```text title="Terminal (real output)"
+Error: Cannot find module 'stray-helper'
+```
+
+That's the "works on my machine" bug in one picture. Run `npm install` once in your home folder by mistake, and every project underneath can silently load packages from it. CI and Docker don't have that folder, so the same code fails there.
+
+### exports: a package can hide its insides
+
+Modern packages can list exactly which files may be loaded from outside in the `exports` field of their `package.json`. Anything else is off limits, even though the file is right there on disk:
+
+```text title="Node.js 24 (real output, path shortened)"
+$ node -e "require('react/cjs/react.development.js')"
+Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './cjs/react.development.js' is not defined by "exports" in …\node_modules\react\package.json
+  code: 'ERR_PACKAGE_PATH_NOT_EXPORTED'
+```
+
+`require('react/package.json')`, on the other hand, works, because React's `exports` lists it.
+
+So "it's in node_modules, so I can import it" is no longer true either. Import the paths a package documents, not the ones you find by browsing its folder.
+
+<Callout type="story" title="Think of it like this">
+Your project is a building, and every floor can have a storeroom called node_modules. When someone on the third floor needs a ladder, they check their own floor's storeroom first, then go down one floor at a time until they find one. They take the first ladder they find, even if the building next door's ladder was the one they meant. npm's job is stocking the storerooms so that everyone finds the right ladder on the way down, and putting shared ladders on the ground floor so there aren't twelve of them.
+</Callout>
+
+## What breaks
+
+| What you see | What's really happening | Fix |
+| --- | --- | --- |
+| `Cannot find module 'x'` after removing or upgrading an unrelated package | `x` was a phantom dependency, hoisted only because something else needed it | Add `x` to your own `dependencies` |
+| `Cannot find module` after `npm uninstall`, though copies are still on disk | Uninstall removes the top-level copy; nested private copies don't help your code | Declare it, or run `npm dedupe` and then declare it |
+| Works on your laptop, fails in CI or Docker | Something was found in a `node_modules` of a parent folder, or a global install | Check `module.paths`; delete stray `node_modules` folders |
+| `ERR_PACKAGE_PATH_NOT_EXPORTED` | You imported a file the package doesn't list in `exports` | Import a documented entry point |
+| "Invalid hook call", `instanceof` failing, a plugin registered but "missing" | Two copies of one library, each with its own state | `npm ls <pkg>`, then align versions or `npm dedupe` |
+| Native module errors in a Linux container | `node_modules` was copied from another operating system; its binaries are for the wrong platform | Install inside the image; keep `node_modules` out of the build context |
+| A huge folder, slow installs, full disks on CI | Transitive dependencies, platform binaries, bundles, source maps, duplicates | Measure first (field notes); dedupe; pick lighter packages |
+
+## Field notes: finding out what's in there
+
+<Steps>
+<Step title="Measure what's big before guessing">
+On macOS, Linux or Git Bash: `du -sh node_modules/* node_modules/@*/* | sort -h | tail -15`. The answer is rarely "my code". It's usually one framework, a native binary or a package with a bundled copy of something else.
+</Step>
+<Step title="Count the copies of a package">
+`npm ls debug` shows every copy, where it is and who required it. `npm explain debug` shows the same thing upside down: every path from your project to each copy. Several versions of one package are normal. The same version several times is something `npm dedupe` can usually fix: `npm find-dupes` shows what it would do without changing anything.
+</Step>
+<Step title="Ask Node which file it will load">
+From the folder the failing code lives in, `node -p "require.resolve('debug')"` prints the file Node will load, and `node -p "module.paths"` prints the folders it searches. If the file is outside your project, you've found a stray `node_modules`.
+</Step>
+<Step title="Flush out phantom dependencies">
+Install with a layout that doesn't hoist, and see what breaks. npm can do this itself: with `npm install --install-strategy=linked`, our Express 4 project's `node_modules` contained only `express`, and the undeclared `require('debug')` failed with `MODULE_NOT_FOUND`. pnpm does the same by default, which is [the next-but-one post](/posts/npm-works-pnpm-breaks/). Every failure is a dependency you should declare.
+</Step>
+<Step title="Never copy node_modules between machines">
+Native binaries are per platform, and paths inside `node_modules/.bin` launchers are per machine. Install where the code runs: in the Docker image, in CI. Put `node_modules` in `.dockerignore`.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"node_modules is big because of my dependencies."** Mostly because of *their* dependencies, platform binaries, pre-bundled copies of other libraries and source maps.
+
+**"If require works, the package is installed properly."** It's installed somewhere Node found it. That might be a hoisted phantom, or a folder outside your project.
+
+**"npm uninstall removes a package."** It removes your top-level copy. Copies other packages need stay where they are.
+
+**"One version means one copy."** debug 2.6.9 was on disk four times until `npm dedupe` ran.
+
+**"Node only looks in my project's node_modules."** It climbs every parent folder to the root of the drive.
+
+**"Anything in node_modules can be imported."** Not if the package's `exports` field doesn't list it.
+
+## Summary
+
+<FiveQuestions
+  problem="Hundreds of packages, each needing specific versions of others, have to be laid out on disk so that every one of them, and your code, finds the right version with one simple lookup rule."
+  sees="A node_modules folder of hundreds of megabytes, the same package installed several times, `require()` calls that work without a declared dependency, `Cannot find module` after unrelated changes, and `ERR_PACKAGE_PATH_NOT_EXPORTED`."
+  underneath="require() looks for node_modules/<name> starting in the calling file's folder and climbing every parent folder, and the first match wins. npm hoists each package as high as it can, so most are shared at the top; when two versions clash, the loser is copied privately under each package that needs it. Size comes from transitive dependencies, per-platform binaries, bundled code, source maps and those copies."
+  breaks="Phantom dependencies that vanish when another package changes, stray node_modules folders in parent directories, duplicate copies with separate state (two Reacts), platform binaries copied to the wrong system, and deep imports blocked by exports."
+  misconception="That the size is your own dependencies, that a working require means a declared dependency, that uninstall removes every copy, that one version means one copy, and that Node only searches your project."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "Where does require('debug') start looking?",
+      options: ["The project root's node_modules", "The node_modules folder in the folder of the file that called require", "The global npm folder", "The folder npm was run from"],
+      answer: 1,
+      why: "The search starts next to the calling file and climbs through every parent folder. The first match wins.",
+    },
+    {
+      q: "Why was debug@2.6.9 installed four times in the same project?",
+      options: ["A bug in npm", "The top-level slot held debug@4 (which the project asked for), so each package needing 2.6.9 got a private copy", "Each copy is a different build", "npm keeps backups"],
+      answer: 1,
+      why: "Two versions can't share one folder name. The one at the top is shared; the other is copied under each package that needs it.",
+    },
+    {
+      q: "What is a phantom dependency?",
+      options: ["A package that failed to download", "A package your code uses without declaring it, which works only because it was installed for something else", "A dev dependency in production", "A deprecated package"],
+      answer: 1,
+      why: "Hoisting puts other packages' dependencies at the top of node_modules, where your code can reach them by accident.",
+    },
+    {
+      q: "After `npm uninstall debug`, four nested copies remain. Does require('debug') from your code work?",
+      options: ["Yes, it uses one of the copies", "No: the nested copies are inside other packages' folders, which your code's search never enters", "Only on Windows", "Only after a restart"],
+      answer: 1,
+      why: "Your code searches its own folder chain. Copies under node_modules/express/node_modules are only visible from inside express.",
+    },
+    {
+      q: "Your app works locally but fails in CI with Cannot find module. Which is a likely cause?",
+      options: ["CI uses a slower disk", "Locally, the package was found in a node_modules folder in a parent directory", "CI can't read package.json", "The package is too big for CI"],
+      answer: 1,
+      why: "require() climbs past your project. A stray node_modules in a parent folder answers locally; CI doesn't have it.",
+    },
+    {
+      q: "Why did @next/swc-win32-x64-msvc take 106 MB, and why won't it work if copied to Linux?",
+      options: ["It's source code that compiles slowly", "It's a native binary built for Windows on x64; Linux needs its own package", "It's corrupted", "It's a cache"],
+      answer: 1,
+      why: "Native tools ship one package per platform as optional dependencies. npm installs the one for the machine it runs on.",
+    },
+    {
+      q: "What does ERR_PACKAGE_PATH_NOT_EXPORTED mean?",
+      options: ["The package isn't installed", "The file exists, but the package's exports field doesn't allow importing it from outside", "The package has no main file", "Node.js is too old"],
+      answer: 1,
+      why: "exports lists the entry points a package allows. Other files are private even though they're on disk.",
+    },
+    {
+      q: "How can you find phantom dependencies with npm alone?",
+      options: ["npm audit", "Install with --install-strategy=linked: undeclared requires fail", "npm cache verify", "npm fund"],
+      answer: 1,
+      why: "The linked layout puts only your declared dependencies at the top, like pnpm, so phantom requires throw MODULE_NOT_FOUND.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="Explain how Node.js resolves require('some-package').">
+If the name is a core module, Node returns it. If it starts with ./, ../ or /, it's resolved as a file path. Otherwise Node looks for node_modules/some-package in the directory of the calling file, then each parent directory up to the filesystem root (module.paths lists them). In the first directory that has it, Node reads the package's package.json: exports if present (which also restricts which subpaths can be loaded), otherwise main, otherwise index.js. Node resolves symlinks to real paths by default before searching further, and caches the result.
+</Question>
+<Question q="What is hoisting, and why does npm do it?">
+Hoisting places each dependency as high in node_modules as possible, usually the top level, as long as no other version of the same name is already there. It lets one copy be shared by every package that needs a compatible version, and it keeps paths short (npm 2's fully nested layout produced paths too long for Windows). When versions conflict, the other version is nested under the packages that need it.
+</Question>
+<Question q="What's a phantom dependency, why is it dangerous, and how do you find them?">
+It's a package your code requires but doesn't declare, available only because hoisting put another package's dependency at the top of node_modules. It's dangerous because its version is chosen by someone else's dependency ranges: when that package upgrades or drops it, your code breaks without any change in your diff. You find them by installing with a non-hoisted layout, such as pnpm's default or npm's --install-strategy=linked, and fixing every require that fails, or with a dependency checker in CI.
+</Question>
+<Question q="Why might a project end up with two copies of the same library, and what problems does that cause?">
+Two dependency ranges that don't overlap force two versions, and hoisting conflicts can even duplicate one version in several places. Each copy is a separate module instance with its own state, so singletons, caches, plugin registries and instanceof checks break across them. The classic case is two copies of React causing Invalid hook call. npm ls shows the copies; you fix it by aligning ranges, deduping, or using overrides deliberately.
+</Question>
+<Question q="Why does node_modules get so large?">
+Transitive dependencies (a handful of direct dependencies often means hundreds of packages), native binaries per platform (compilers, image libraries, often tens or hundreds of MB each), packages shipping multiple builds, bundled copies of other libraries, type definitions and source maps, and duplicate copies when versions conflict. Measure with du on node_modules to see which packages actually dominate before trying to slim it.
+</Question>
+<Question q="An app works locally but throws Cannot find module in Docker. How do you investigate?">
+Check that the package is declared in package.json and in the lockfile, since it may be a phantom that only exists locally because of a different install history. Run node -p "require.resolve('pkg')" locally to see where it actually loads from: if it's outside the project, a stray node_modules in a parent directory or a global install is answering. Check the Docker build installs dependencies inside the image (npm ci) rather than copying node_modules from the host, and that devDependencies aren't skipped if the code needs them at runtime.
+</Question>
+</Interview>
+
+## What's next
+
+npm decided where every copy goes, but which versions did it pick, and why did a teammate's install pick different ones? Next: **It Worked Yesterday. What Does Your Lockfile Actually Lock?** [Read it now](/posts/what-your-lockfile-locks/), or [see everything in Week 2](/#this-week).
+
+### Sources and further reading
+
+- Node.js docs: [Loading from node_modules folders](https://nodejs.org/api/modules.html#loading-from-node_modules-folders) and the [full resolution algorithm](https://nodejs.org/api/modules.html#all-together)
+- Node.js docs: [Package entry points and exports](https://nodejs.org/api/packages.html#package-entry-points)
+- npm docs: [folders](https://docs.npmjs.com/cli/v11/configuring-npm/folders), [npm ls](https://docs.npmjs.com/cli/v11/commands/npm-ls), [npm dedupe](https://docs.npmjs.com/cli/v11/commands/npm-dedupe) and [install-strategy](https://docs.npmjs.com/cli/v11/using-npm/config#install-strategy)
+- npm docs: [optionalDependencies](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#optionaldependencies), and the [os](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#os) and [cpu](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#cpu) fields
+- React docs: [Invalid Hook Call Warning](https://react.dev/warnings/invalid-hook-call-warning), including duplicate copies of React

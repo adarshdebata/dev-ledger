@@ -86,6 +86,7 @@ export const weeks: Week[] = [
       {
         day: 2,
         title: "Why Is node_modules So Huge? And How Does require() Find Anything in It?",
+        slug: "why-node-modules-is-huge",
         about:
           "Why one dependency brings dozens more, how the same package ends up installed twice, what hoisting flattens, and how require() walks up your folders until it finds a match.",
       },
