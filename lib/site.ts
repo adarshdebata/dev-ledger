@@ -93,6 +93,7 @@ export const weeks: Week[] = [
       {
         day: 3,
         title: "It Worked Yesterday. What Does Your Lockfile Actually Lock?",
+        slug: "what-your-lockfile-locks",
         about:
           "Version ranges versus the exact versions and checksums a lockfile pins, why CI should run npm ci, and why a package's own lockfile is ignored the moment someone installs it.",
       },

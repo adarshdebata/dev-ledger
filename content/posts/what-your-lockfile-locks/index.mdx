@@ -1,0 +1,339 @@
+---
+title: "It Worked Yesterday. What Does Your Lockfile Actually Lock?"
+subtitle: "Same package.json, a month apart: 10 of 68 packages changed and nobody touched a line. What package-lock.json pins, what it doesn't, and why npm ci exists."
+date: 2026-11-28
+series: 2
+roadmap: [37]
+tags: [npm, nodejs, packages, debugging, ci]
+author: adarshdebata
+thumb: lock
+summary: "package.json holds version ranges, so the same file installs different trees on different days. package-lock.json pins the exact version, download address and hash of every package, and npm ci installs exactly that or refuses. We installed one package.json a month apart and watched 10 of 68 packages change. The lockfile doesn't travel with a library, doesn't pin Node.js, and deleting it isn't a reset: it's an upgrade of everything."
+---
+
+**You use it every day. But do you actually know what happens underneath?** We've seen [what npm install does](/posts/you-ran-npm-install/) and [where it puts everything](/posts/why-node-modules-is-huge/). This post is about the file it writes at the very end, the one most people only notice when it causes a merge conflict.
+
+Every team has had this day. The build was green yesterday. This morning it's red. Nobody merged anything, the code hasn't changed, and yet something is different. Often, the thing that changed is in `node_modules`, and the reason is a file that wasn't committed, or wasn't used.
+
+## What you see
+
+- **CI breaks with no code change.** The failing test touches a library you haven't upgraded in months.
+- **"Works for me."** A teammate cloned the repo last week; you cloned it today. Same commit, different behaviour.
+- **The magic fix.** Someone deletes `node_modules` and `package-lock.json`, reinstalls, and the bug disappears. Or a new one appears.
+- **A wall of red in code review:** thousands of changed lines in `package-lock.json` from a one-line change.
+- **And this, in CI:**
+
+```text title="npm ci (real output)"
+npm error code EUSAGE
+npm error
+npm error `npm ci` can only install packages when your package.json and package-lock.json or npm-shrinkwrap.json are in sync. Please update your lock file with `npm install` before continuing.
+npm error
+npm error Missing: cors@2.8.6 from lock file
+npm error Missing: object-assign@4.1.1 from lock file
+```
+
+Before reading on:
+
+<Predict
+  question='Your package.json says "express": "^5.1.0" and no lockfile is committed. You install on 1 October; CI installs on 1 November. Which packages can differ?'
+  options={[
+    "None: package.json is the same",
+    "Only express, if a new 5.x came out",
+    "Any package in the tree whose range allows a newer version, including ones you've never heard of",
+    "Only packages with security fixes",
+  ]}
+  answer={2}
+>
+**Any of them.** We ran exactly this. Without a lockfile, npm resolved every range again a month later, and **10 of the 68 entries in the tree differed**, including two packages that moved to a new major version. Only one of those was express. The rest were dependencies of dependencies.
+</Predict>
+
+## What's underneath
+
+### Ranges float; a lockfile pins
+
+As [the first post this week](/posts/you-ran-npm-install/) showed, `package.json` holds <Term id="version-range">version ranges</Term>. `^5.1.0` accepts 5.1.0, 5.2.1, 5.3.0 and anything else below 6. Every package inside express does the same with its own dependencies. So the tree npm builds depends on **what the registry holds on the day you install**.
+
+A <Term id="lockfile">lockfile</Term> freezes that tree. `package-lock.json` (format version 3 for npm 9 and later) has one entry per installed folder, keyed by its path:
+
+```json title="package-lock.json (real excerpt, shortened)"
+{
+  "name": "shop-api",
+  "lockfileVersion": 3,
+  "packages": {
+    "": {
+      "name": "shop-api",
+      "dependencies": { "express": "^5.1.0" }
+    },
+    "node_modules/express": {
+      "version": "5.3.0",
+      "resolved": "https://registry.npmjs.org/express/-/express-5.3.0.tgz",
+      "integrity": "sha512-qCqy1xSoaugxOD4IVHb1ZWdkvCF2W3aE2okKouWj8VwJ+ztskSiXoBnCSJqfKT+cVPJhuJqe9YLbY425+Zh00g==",
+      "dependencies": { "content-disposition": "^2.0.1", "qs": "^6.16.0", "…": "…" }
+    }
+  }
+}
+```
+
+Three fields do the locking:
+
+- **`version`**: the exact version that was chosen.
+- **`resolved`**: where its tarball came from, so the next install doesn't have to ask.
+- **`integrity`**: the sha512 of that tarball, so the next install gets the same bytes, not just the same version number.
+
+The `dependencies` inside an entry are still ranges: they're copied from that package's own `package.json`. The pinning happens because every one of those dependencies has its *own* entry with an exact version. The keys are folder paths, not names: a package installed twice, like the copies of `debug` [in the last post](/posts/why-node-modules-is-huge/), appears twice, once per folder.
+
+### The same package.json, a month apart
+
+npm has an option that makes this easy to see for yourself: `--before`. It resolves every range as if it were that date, ignoring anything published later. We installed one `package.json` as of 1 October and again as of 1 November, then compared the two lockfiles:
+
+```text title="Lockfile comparison (real output)"
+body-parser                              2.3.0      -> 2.4.0
+body-parser/node_modules/content-type    2.1.0      -> -
+content-disposition                      1.1.0      -> 2.0.1
+content-type                             1.0.5      -> 2.1.0
+encodeurl                                2.0.0      -> 2.0.1
+express                                  5.2.1      -> 5.3.0
+negotiator/node_modules/content-type     2.1.0      -> -
+on-finished                              2.4.1      -> 2.4.2
+qs                                       6.16.0     -> 6.17.1
+type-is/node_modules/content-type        2.1.0      -> -
+10 of 68 entries differ
+```
+
+Look at `content-disposition`: 1.1.0 to **2.0.1, a new major version**, which semver says may contain breaking changes. Nobody broke a rule: express 5.3.0 simply asks for `content-disposition: ^2.0.1` where 5.2.1 asked for 1.x. Your range for express allowed 5.3.0, so your tree took the new major version with it. Three nested copies of `content-type` vanished too, because the new versions agreed with each other. Press **Next** to replay it, with and without a lockfile:
+
+<LockfileTimeline />
+
+### npm install vs npm ci
+
+Both commands read the lockfile. They differ in what they're allowed to change:
+
+| | `npm install` | `npm ci` |
+| --- | --- | --- |
+| Lockfile and package.json agree | Installs what's locked | Installs what's locked |
+| They disagree | Re-resolves what changed and **rewrites the lockfile** | **Refuses** (`EUSAGE`) |
+| Existing `node_modules` | Updated in place | Deleted first |
+| Writes package.json or the lockfile | Yes, when needed | Never |
+| Use it for | Adding and changing dependencies on your machine | CI, Docker builds, deploys |
+
+We checked the first row. With the October lockfile in place, `npm install` changed nothing, even though newer versions existed:
+
+```text title="Terminal (real output)"
+$ npm install
+up to date in 3s
+
+$ npm ci
+added 68 packages in 8s
+```
+
+`npm ci` built a tree identical to the October one: 0 of 68 entries differed. That's the point of it. In CI you don't want npm making decisions; you want it to install what you tested, or stop.
+
+### Upgrading on purpose
+
+A lockfile doesn't mean never upgrading. It means upgrading when you choose to, in a commit you can review and roll back:
+
+```text title="Terminal, with the October lockfile (real output)"
+$ npm update qs
+changed 1 package in 3s
+
+$ npm update
+removed 3 packages, and changed 8 packages in 5s
+```
+
+`npm update qs` moved just `qs`, 6.16.0 to 6.17.1, a package you never declared: you can update a transitive dependency without touching anything else. `npm update` moved everything to the newest versions your ranges allow, express and the new major `content-disposition` included, and left `package.json` alone. Both changed only the lockfile, which is exactly what you review in the pull request.
+
+<Callout type="insight" title="Deleting the lockfile is an upgrade, not a reset">
+"Delete `package-lock.json` and reinstall" feels like turning it off and on again. It's really `npm update` for every package at once, with no record of what changed. When it "fixes" a bug, some package in the tree moved, and you've lost the chance to find out which one. When it introduces a bug, you've got the same problem with the opposite sign. Update the one package you mean, and commit the lockfile it produces.
+</Callout>
+
+### A library's lockfile stays at home
+
+If you publish a library, your lockfile does nothing for the people who install it. npm doesn't even include it in the package:
+
+```text title="npm pack --dry-run (real output)"
+npm notice Tarball Contents
+npm notice 84B package.json
+npm notice total files: 1
+```
+
+When someone installs your library, *their* npm resolves your ranges against *their* registry, on *their* day, and writes *their* lockfile. Your CI, with your lockfile, tests a tree your users may never get. Many library authors add a CI job that installs without the lockfile, to see what a new user would get.
+
+There's one exception: `npm-shrinkwrap.json`. It's the same format, but it **is** published. With one in place, the same `npm pack` listed `29.9kB npm-shrinkwrap.json`. It's meant for command-line tools that are installed and run as they are, never for libraries that other packages build on, since it would force your exact versions on everyone who uses you.
+
+### What a lockfile doesn't lock
+
+The lockfile pins packages. Several things that change your build aren't packages:
+
+- **Node.js itself.** `engines` in package.json is a warning unless you enable `engine-strict`. Pin Node with `.nvmrc`, Volta, the Docker base image tag, or the CI setup step.
+- **The npm version.** A different npm can write the same tree in a different format, which is where many of those giant lockfile diffs come from.
+- **Which platform binary you get.** The lockfile lists every platform variant: our Next.js lockfile had entries for all eight builds of its compiler, from `darwin-arm64` to `win32-x64-msvc`. Each machine installs the one that matches it.
+- **What install scripts download.** A `postinstall` that fetches a binary from the internet fetches whatever is there that day. The lockfile only fixed the version of the script.
+- **Anything outside node_modules**: global CLIs, system libraries, environment variables.
+
+### Merge conflicts
+
+Two branches that each add a dependency will both change `package-lock.json`, and git will often mark a conflict. We reproduced it: one branch added `cors`, another added `helmet`, and the merge stopped. On this machine Volta, a Node version manager, wouldn't even run `node` while `package.json` held conflict markers:
+
+```text title="Terminal (real output)"
+Volta error: Could not parse project manifest
+```
+
+The fix is less work than it looks. Resolve `package.json` by hand: keep both dependencies, which is a two-line edit. Then leave the lockfile's conflict markers alone and run `npm install`:
+
+```text title="Terminal (real output)"
+$ npm install
+added 2 packages in 3s
+```
+
+npm read both sides of the conflict, built a tree containing both packages, and wrote a clean lockfile: no markers left, `cors` and `helmet` both present. Don't hand-edit the lockfile's conflicts, and don't resolve them by deleting the file: that turns a merge into an upgrade of everything.
+
+<Callout type="story" title="Think of it like this">
+package.json is a recipe that says "a ripe tomato, about this size". The lockfile is a photo of the exact tomatoes you used the day the dish came out right, with their barcodes. A month later the shop has different tomatoes, all ripe, all the right size, and the dish tastes slightly different. npm ci means "buy exactly these barcodes, or don't cook".
+</Callout>
+
+## What breaks
+
+| What you see | What's really happening | Fix |
+| --- | --- | --- |
+| CI goes red with no code change | No lockfile committed, or CI runs `npm install`, so ranges were resolved again | Commit `package-lock.json`; use `npm ci` in CI |
+| `npm ci` fails with `EUSAGE … Missing: x from lock file` | package.json was changed without updating the lockfile | Run `npm install` locally and commit both files |
+| "Works for me" between two clones of the same commit | Different install dates without a lockfile, or one person ran `npm install` and the other `npm ci` | Commit the lockfile; everyone and every machine uses `npm ci` for a clean install |
+| Thousands of changed lines from a one-line change | Different npm versions or registries rewrote the file | Align npm versions (`packageManager` field, CI setup); one registry |
+| Merge conflict in package-lock.json | Two branches changed dependencies | Resolve package.json, then `npm install` |
+| A library passes its own CI but breaks for users | Its lockfile isn't published; users resolve ranges fresh | Add a CI job that installs without the lockfile |
+| "Deleting the lockfile fixed it" | Some package moved; you don't know which | Restore the lockfile, then update packages one at a time |
+
+## Field notes: when a dependency changed under you
+
+<Steps>
+<Step title="First, check what CI actually ran">
+Look at the install step's log. `npm install` in CI is allowed to change versions; `npm ci` isn't. `added 68 packages` from `npm ci` with a committed lockfile means the tree is the one you tested, and the problem is elsewhere.
+</Step>
+<Step title="Compare the two trees, not the two lockfiles">
+A raw `git diff package-lock.json` is unreadable. Save `npm ls --all` from a good install and a bad one and diff those, or compare the `version` of each `packages` entry with a small script, as we did above. The answer is usually a short list.
+</Step>
+<Step title="Travel back in time with --before">
+`npm install --before=2026-10-01` resolves every range as it would have on that date. If a fresh install is broken today, install as of last week, then two days ago, until it works: you've found the release that broke you, by date, without guessing.
+</Step>
+<Step title="Find who pulled the changed package in">
+`npm explain qs` shows which of your dependencies requires it, and with which range. That tells you whether to wait for a fix, pin it with an `overrides` entry, or move a direct dependency.
+</Step>
+<Step title="Upgrade deliberately, one thing at a time">
+`npm update <pkg>` moves one package, even a transitive one, within the ranges that allow it, and changes only the lockfile. Review that diff like code: it is code.
+</Step>
+<Step title="Make CI enforce it">
+Use `npm ci` everywhere a machine installs: CI, Dockerfiles, deploy scripts. It fails the moment someone forgets to commit an updated lockfile. Cache npm's download cache (`~/.npm`) keyed on the lockfile's hash, never `node_modules` itself.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"The lockfile is a local file; commit only package.json."** Then every machine resolves ranges on its own day. For an app, the lockfile is the most important file in the dependency story.
+
+**"npm install installs exactly what's in the lockfile."** When package.json and the lockfile agree, yes. When they don't, it changes the lockfile to match. Only `npm ci` refuses.
+
+**"Deleting the lockfile is a clean start."** It's an unrecorded upgrade of every package in the tree.
+
+**"My library's lockfile protects my users."** It isn't even in the package you publish.
+
+**"Semver ranges are safe, so floating versions are fine."** A range let our tree take a new major version of a package, through no one's mistake. And semver is a promise people make, not one a computer checks.
+
+**"A lockfile makes the build reproducible."** It pins packages. It doesn't pin Node.js, npm, platform binaries or anything an install script downloads.
+
+## Summary
+
+<FiveQuestions
+  problem="package.json says which versions are acceptable, and acceptable versions keep being published. A lockfile records the exact tree you tested, so every machine and every day builds the same one, until you choose to change it."
+  sees="CI breaking with no code change, different behaviour between two clones of one commit, bugs that vanish when the lockfile is deleted, huge lockfile diffs, merge conflicts in package-lock.json, and `npm ci` failing with EUSAGE."
+  underneath="package-lock.json has one entry per installed folder, with the exact version, the tarball's address and its sha512. npm install uses it but rewrites it when package.json disagrees; npm ci installs exactly what it says or refuses. Without it, every range is resolved again against today's registry."
+  breaks="Unlocked installs drift with every release, edited package.json files make npm ci fail, mismatched npm versions churn the file, merges conflict, and a library's own lockfile never reaches its users."
+  misconception="That the lockfile is optional, that npm install always follows it, that deleting it is a reset, that it protects a library's users, and that it pins Node.js and everything else about the build."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "Which three fields in a package-lock.json entry pin a package?",
+      options: ["name, license, engines", "version, resolved, integrity", "dependencies, devDependencies, peerDependencies", "main, exports, types"],
+      answer: 1,
+      why: "The exact version, where its tarball came from, and the hash its bytes must have.",
+    },
+    {
+      q: "We installed one package.json a month apart without a lockfile. How many of the 68 tree entries changed?",
+      options: ["0", "1, only express", "10, including two new major versions", "All 68"],
+      answer: 2,
+      why: "Every range was resolved again; express, qs, body-parser and others moved, and content-disposition jumped from 1.1.0 to 2.0.1.",
+    },
+    {
+      q: "What does npm ci do when package.json and package-lock.json disagree?",
+      options: ["Updates the lockfile", "Refuses with EUSAGE and installs nothing", "Ignores package.json", "Installs the newest versions"],
+      answer: 1,
+      why: "npm ci never changes the lockfile. If it can't install exactly what's locked, it stops.",
+    },
+    {
+      q: "With a lockfile in place and package.json unchanged, what does npm install do?",
+      options: ["Upgrades everything within the ranges", "Installs what's locked: it printed \"up to date\" in our test", "Deletes the lockfile", "Fails"],
+      answer: 1,
+      why: "When the two files agree, npm install follows the lockfile. Upgrades only happen when you ask, with npm update.",
+    },
+    {
+      q: "Why doesn't your library's package-lock.json protect the people who install it?",
+      options: ["It's too large", "npm doesn't publish it: users resolve your ranges themselves", "It's encrypted", "It only works on Linux"],
+      answer: 1,
+      why: "npm pack left it out of the tarball. Only npm-shrinkwrap.json is published.",
+    },
+    {
+      q: "How do you resolve a merge conflict in package-lock.json?",
+      options: ["Delete the file and reinstall", "Edit the conflict markers by hand", "Resolve package.json, then run npm install, which rewrites the lockfile", "Keep only your side"],
+      answer: 2,
+      why: "npm can read both sides of the conflict and build a tree with both changes. Deleting the file upgrades everything.",
+    },
+    {
+      q: "Which of these does a lockfile NOT pin?",
+      options: ["The version of a transitive dependency", "The tarball's hash", "The Node.js version", "The download address"],
+      answer: 2,
+      why: "engines is advisory unless engine-strict is on. Pin Node with your version manager, base image or CI setup.",
+    },
+    {
+      q: "A fresh install is broken today but worked last week. Which npm option helps find the release that broke it?",
+      options: ["--force", "--before=<date>", "--legacy-peer-deps", "--global"],
+      answer: 1,
+      why: "--before resolves ranges as of a date, so you can bisect the breaking release by day.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="What's the difference between package.json and package-lock.json?">
+package.json declares what the project accepts: direct dependencies as version ranges, plus scripts and metadata. package-lock.json records what was actually installed: every package in the tree, including transitive ones, keyed by install path, with exact version, resolved tarball URL and integrity hash. package.json is edited by people; the lockfile is written by npm and committed so that every install reproduces the same tree.
+</Question>
+<Question q="When would you use npm ci instead of npm install?">
+Whenever a machine installs dependencies rather than a person changing them: CI, Docker builds, deploy scripts. npm ci deletes node_modules, installs exactly the lockfile, verifies integrity, never modifies package.json or the lockfile, and fails if they're out of sync. That makes builds reproducible and catches a forgotten lockfile update immediately. npm install is for adding, removing or updating dependencies on purpose.
+</Question>
+<Question q="Should a library commit its lockfile? Does it affect consumers?">
+It's still useful to commit: contributors and CI get a reproducible environment. But it doesn't affect consumers, because npm doesn't publish package-lock.json. Consumers resolve the library's ranges themselves. So libraries should keep their ranges honest, and ideally test in CI without the lockfile too, to catch breakage from newly published dependency versions. npm-shrinkwrap.json is published, but it's meant for top-level CLI tools, not libraries.
+</Question>
+<Question q="A build broke overnight with no code changes. How do you find out why?">
+Check whether CI used npm ci with a committed lockfile. If not, compare the dependency trees from the last good and the first bad build (npm ls --all, or a script over the lockfiles) to find which packages changed. `npm install --before=<date>` lets you reproduce the tree as of any date and bisect to the release that broke it. npm explain shows who depends on the changed package. Then fix forward or pin with overrides, and switch CI to npm ci with a committed lockfile.
+</Question>
+<Question q="How do you upgrade a vulnerable transitive dependency?">
+First, npm explain to see which packages depend on it and with which ranges. If the fixed version is within those ranges, `npm update <pkg>` moves it and updates only the lockfile. If a parent's range excludes the fix, upgrade the parent, or as a last resort add an overrides entry forcing the fixed version, then test, because you're overriding someone else's declared range.
+</Question>
+<Question q="Why do lockfile diffs sometimes contain thousands of lines for a tiny change?">
+Different npm versions can serialise the same tree differently or migrate the lockfile format, different registries change every resolved URL, and re-resolving after a deleted lockfile updates many packages at once. Aligning npm versions across the team and CI, using one registry, and updating dependencies deliberately keeps diffs small and reviewable.
+</Question>
+</Interview>
+
+## What's next
+
+npm's lockfile pins the versions. But npm's flat folder still lets your code reach packages it never declared, and some teams switch package managers to stop that. Next: **Your App Works with npm. Why Does It Break with pnpm?** [Read it now](/posts/npm-works-pnpm-breaks/), or [see everything in Week 2](/#this-week).
+
+### Sources and further reading
+
+- npm docs: [package-lock.json](https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json) and [npm-shrinkwrap.json](https://docs.npmjs.com/cli/v11/configuring-npm/npm-shrinkwrap-json)
+- npm docs: [npm ci](https://docs.npmjs.com/cli/v11/commands/npm-ci), [npm update](https://docs.npmjs.com/cli/v11/commands/npm-update) and the [`before` option](https://docs.npmjs.com/cli/v11/using-npm/config#before)
+- npm docs: [overrides](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#overrides) and [engines](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#engines)
+- [Semantic Versioning 2.0.0](https://semver.org/), the promise behind every range
