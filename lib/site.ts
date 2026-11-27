@@ -79,6 +79,7 @@ export const weeks: Week[] = [
       {
         day: 1,
         title: "You Ran npm install. Where Did All Those Packages Come From?",
+        slug: "you-ran-npm-install",
         about:
           "One line in package.json becomes hundreds of folders. Follow npm as it resolves versions against the registry, reuses its cache, checks every download and runs install scripts you never read.",
       },
