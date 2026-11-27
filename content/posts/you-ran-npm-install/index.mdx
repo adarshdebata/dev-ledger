@@ -1,0 +1,455 @@
+---
+title: "You Ran npm install. Where Did All Those Packages Come From?"
+subtitle: "One line in package.json became 65 folders. Follow npm through the registry, its cache, the hash checks and the install scripts, and learn what each error means."
+date: 2026-11-28
+series: 2
+roadmap: [35]
+tags: [npm, nodejs, packages, debugging, security]
+author: adarshdebata
+thumb: tree
+summary: "npm install isn't a download. It resolves version ranges against the registry, builds a whole tree of packages you never asked for, fetches each tarball through a hash-addressed cache, checks every file's fingerprint, unpacks them, runs install scripts and writes a lockfile. Each step has its own error, and once you know the steps, the errors read like a map."
+---
+
+**You use it every day. But do you actually know what happens underneath?** Last week followed one request from your browser to a server. This week is about the tools you install once and never look inside again, and it starts with the command you run before almost anything else.
+
+You've typed this a thousand times:
+
+```bash
+npm install express
+```
+
+A few seconds later there's a `node_modules` folder, and you move on. But you asked for **one** package. Look inside that folder and count.
+
+## What you see
+
+We ran it in an empty folder, with an empty npm cache, on Node.js 24 and npm 11.19:
+
+```text title="Terminal (real output)"
+added 65 packages, and audited 66 packages in 14s
+
+31 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+```
+
+Sixty-five packages, 3.5 MB on disk, from one line in `package.json`. That's a small project. A typical front-end setup with five direct dependencies, `next`, `react`, `react-dom`, `typescript` and `jest`, came to **380 packages, 415 MB and 15,725 files** on our laptop.
+
+Before reading on, take a guess:
+
+<Predict
+  question="You run npm install express in an empty folder. Where do the other 64 packages come from?"
+  options={[
+    "npm installs a standard set of popular packages with every project",
+    "express needs packages, which need packages, and npm installs the whole chain",
+    "They're inside express's own download",
+    "npm downloads one big bundle and splits it up",
+  ]}
+  answer={1}
+>
+**The whole chain.** express 5.3.0 lists 28 dependencies of its own. Each of those lists more, and so on, until nothing new turns up: 65 packages. Every one is a separate download from the registry, with its own version, its own hash and, sometimes, its own install script. You chose one of them.
+</Predict>
+
+## What's underneath
+
+### package.json holds ranges, not versions
+
+Open the `package.json` that command wrote:
+
+```json title="package.json"
+{
+  "dependencies": {
+    "express": "^5.3.0"
+  }
+}
+```
+
+That `^5.3.0` isn't a version. It's a <Term id="version-range">version range</Term>: 5.3.0 **or anything newer below 6.0.0**. `~5.3.0` would mean any newer 5.3.x, and `5.3.0` alone would mean exactly that. When npm installs from a range, it picks the newest version the registry has that matches, on the day you run it. Remember that: it's the whole story of [this week's lockfile post](/posts/what-your-lockfile-locks/).
+
+### Every dependency has dependencies
+
+npm's first job is to turn ranges into exact versions, and it does that by asking the <Term id="registry">registry</Term>. For each package it downloads a metadata document listing every version ever published. express has 290 of them, and two tags that name the newest of each line:
+
+```text title="npm view express dist-tags (real output)"
+{ 'latest-4': '4.22.3', latest: '5.3.0' }
+```
+
+npm picks the newest version inside your range, reads *its* dependency ranges, and repeats for each of those. The packages you get this way are <Term id="transitive-dependency">transitive dependencies</Term>: installed because something you asked for needs them, or needs something that needs them. To see why any one of them is there, ask npm:
+
+```text title="npm explain ms (real output, shortened)"
+ms@2.1.3
+node_modules/ms
+  ms@"^2.1.3" from debug@4.4.3
+  node_modules/debug
+    debug@"^4.4.0" from express@5.3.0
+    node_modules/express
+      express@"^5.3.0" from the root project
+  ms@"^2.1.3" from send@1.2.1
+  node_modules/send
+    send@"^1.1.0" from express@5.3.0
+```
+
+`ms` is there because both `debug` and `send` need it, and they're there because express needs them. You'll never type `require('ms')`, but it runs inside your app.
+
+### Follow one install, step by step
+
+npm's installer works in stages, and they have names: you'll see them in its timing output. Press **Next** to walk through them. Then switch to a second install with a warm cache and a lockfile, and use **Break** to see where three real errors stop it:
+
+<InstallPipeline />
+
+### Step 1: the registry, with a CDN in front
+
+Every metadata request is an ordinary HTTPS GET. Turn on npm's HTTP log and you can watch them go, one per package:
+
+```text title="npm install --loglevel http (real output, first lines)"
+npm http fetch GET 200 https://registry.npmjs.org/express 547ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/depd 418ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/vary 419ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/once 440ms (cache miss)
+```
+
+On a cold install that was **132 requests**: 65 tarballs and 67 metadata requests, because two packages were asked for twice in the same run. The registry answers all of them through a CDN, and its headers say so:
+
+```http title="curl -sI https://registry.npmjs.org/express (real output)"
+Content-Type: application/json
+CF-Cache-Status: HIT
+Age: 85
+Cache-Control: public, max-age=300
+```
+
+`max-age=300` means a copy of express's metadata may be reused for five minutes, by Cloudflare and by npm itself. Hold on to that number; it explains the cache behaviour below. (npm asks for a trimmed-down version of the document, `application/vnd.npm.install-v1+json`, with only what installing needs.)
+
+### Step 2: the cache, where files are stored by their fingerprint
+
+npm keeps everything it downloads in a cache. Ask where:
+
+```text title="Terminal (real output, user name replaced)"
+$ npm config get cache
+C:\Users\you\AppData\Local\npm-cache
+```
+
+Inside, `_cacache/content-v2/sha512/` is full of files with names like `01/35/94bf7f3b8be9…`. That name is the file's own sha512 hash. This is a content-addressed cache: a file is stored under its fingerprint, so a tarball can't be half-replaced by a different one with the same name, and two projects that need the same file share one copy.
+
+Run the same install again and the log changes from `fetch` to `cache`:
+
+```text title="npm install --loglevel http, second run (real output)"
+npm http cache https://registry.npmjs.org/express 77ms (cache hit)
+npm http cache math-intrinsics@https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz 0ms (cache hit)
+```
+
+Wait more than five minutes and you'll see a third kind of line: `fetch GET 200 … (cache revalidated)`. The cached metadata has passed its `max-age`, so npm asks the registry "has this changed?" and reuses its copy if not. Tarballs never need that: a published version can never change, and the registry sends them with `Cache-Control: public, immutable, max-age=31557600`, a year.
+
+<Callout type="insight" title="The lockfile skips a whole step">
+With a `package-lock.json` in place, npm doesn't need the registry's metadata at all: the lockfile already names every exact version and where to download it. On our second install, with a warm cache and a lockfile, npm made **zero** metadata requests, and the tree-building step fell from 6,053 ms to 47 ms. A cold cache costs you downloads; a missing lockfile costs you the whole resolution step.
+</Callout>
+
+### Step 3: every download is checked against a hash
+
+Each tarball comes with an <Term id="integrity">integrity hash</Term>, and the lockfile records it next to the version:
+
+```json title="package-lock.json (real excerpt)"
+"node_modules/express": {
+  "version": "5.3.0",
+  "resolved": "https://registry.npmjs.org/express/-/express-5.3.0.tgz",
+  "integrity": "sha512-qCqy1xSoaugxOD4IVHb1ZWdkvCF2W3aE2okKouWj8VwJ+ztskSiXoBnCSJqfKT+cVPJhuJqe9YLbY425+Zh00g==",
+  "license": "MIT"
+}
+```
+
+After every download, npm hashes the bytes it actually received and compares. To see what a mismatch looks like, we changed one hash in a lockfile by hand and ran a clean install:
+
+```text title="npm ci with a changed integrity hash (real output, hashes shortened)"
+npm warn tarball tarball data for ms@https://registry.npmjs.org/ms/-/ms-2.1.3.tgz (sha512-Bwc…) seems to be corrupted. Trying again.
+npm warn tarball tarball data for ms@https://registry.npmjs.org/ms/-/ms-2.1.3.tgz (sha512-Bwc…) seems to be corrupted. Trying again.
+npm error code EINTEGRITY
+npm error sha512-Bwc… integrity checksum failed when using sha512: wanted sha512-Bwc… but got sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==. (2967 bytes)
+```
+
+npm retried twice, in case a download had been cut short, then refused to install a file it couldn't vouch for. That's the check doing its job. In real life `EINTEGRITY` usually means a lockfile edited badly during a merge, a private registry that rebuilt a package under the same version, or a proxy that changed the bytes on the way.
+
+### Step 4: unpacking, and the .bin folder
+
+Each tarball is unpacked into its own folder under `node_modules`, most of them side by side at the top level. We'll spend [the whole next post](/posts/why-node-modules-is-huge/) on why they're arranged that way.
+
+Packages that ship commands get a launcher in `node_modules/.bin`. On Windows each command gets three, one per kind of shell:
+
+```text title="ls node_modules/.bin (real output, filtered)"
+jest
+jest.cmd
+jest.ps1
+tsc
+tsc.cmd
+tsc.ps1
+```
+
+That's why `"test": "jest"` works in your `scripts`: `npm run` puts `node_modules/.bin` at the front of the `PATH` while the script runs. It's also why `jest` alone, typed in a plain terminal, says "command not found" unless you installed it globally. `npx jest` finds the local one.
+
+### Step 5: install scripts, the part nobody reads
+
+A package can ask to run a command once it's unpacked: a `preinstall`, `install` or `postinstall` script. Most of these download or build a native binary. But an <Term id="install-script">install script</Term> is any command at all, run on your machine, with your user's permissions, by a package you may never have heard of. It's how many npm supply-chain attacks have got in: a compromised package version runs its payload the moment someone installs it.
+
+To see what npm does with them, we installed a tiny local package whose `postinstall` writes a file. npm 11 ran it, printed nothing from it, and then warned:
+
+```text title="npm 11.19 (real output)"
+added 1 package in 4s
+npm warn install-scripts 1 package has install scripts not yet covered by allowScripts:
+npm warn install-scripts   hello-pi@1.0.0 (postinstall: node -e "…")
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+```
+
+The file was there: the script had run. npm 12 changes that. The same install with npm 12.2 **blocked** the script:
+
+```text title="npm 12.2 (real output)"
+npm warn install-scripts 1 package had install scripts blocked because they are not covered by allowScripts:
+npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+```
+
+Approving a package records it in `package.json`, pinned to the exact version:
+
+```json title="package.json after npm install-scripts approve esbuild"
+"allowScripts": {
+  "esbuild@0.28.2": true
+}
+```
+
+So upgrading esbuild later means approving it again, which is the point: you review each new version's script before it runs. (esbuild, as it happens, still compiled TypeScript with its script blocked, because its binary arrives as a separate package. Many packages are like that. Ones that compile native code during install aren't.) To list every package in your tree that has an install script:
+
+```text title="Terminal (real output, filtered)"
+$ npm query ":attr(scripts, [postinstall])"
+    "name": "esbuild",
+    "version": "0.28.2",
+      "postinstall": "node install.js"
+```
+
+### Step 6: the lockfile, then the audit
+
+Last, npm writes `package-lock.json`, the exact versions, addresses and hashes of all 65 packages, and sends the list to the registry's audit endpoint. "found 0 vulnerabilities" is that answer. Install an old version and the answer changes:
+
+```text title="npm install express@4.17.1 (real output)"
+added 50 packages, and audited 51 packages in 12s
+
+7 vulnerabilities (3 low, 4 high)
+
+To address all issues, run:
+  npm audit fix --force
+```
+
+`npm audit` names each one, with a link to its advisory:
+
+```text title="npm audit (real output, one entry)"
+path-to-regexp  <=0.1.12
+Severity: high
+path-to-regexp outputs backtracking regular expressions - https://github.com/advisories/GHSA-9wv6-86v2-598j
+path-to-regexp contains a ReDoS - https://github.com/advisories/GHSA-rhx6-c78j-4q9w
+fix available via `npm audit fix`
+node_modules/path-to-regexp
+```
+
+Notice `--force` in the install's suggestion. Plain `npm audit fix` only moves packages within the ranges you allowed. `--force` is allowed to jump major versions, which can break your app. Read what it plans to change first: `npm audit fix --dry-run`.
+
+<Callout type="story" title="Think of it like this">
+Your package.json is a shopping list that says "milk, any brand, not expired". npm is the person who goes to the shop. Each product's label lists more things it needs, so the trolley fills up with things you never wrote down. At the till, every item's barcode is scanned against the receipt (integrity). A few items want to be assembled in your kitchen before use (install scripts). And the lockfile is the receipt you keep, so next week someone can buy exactly the same things.
+</Callout>
+
+## What breaks
+
+Every error npm prints starts with `npm error code`, and that code tells you which step failed:
+
+| `npm error code` | Step | What's really happening | First thing to try |
+| --- | --- | --- | --- |
+| `E404` | Registry | No such package, often a typo, or a private package without a login | Check the name; `npm view <pkg>` |
+| `ETARGET` | Registry | The package exists, but no version matches your range | `npm view <pkg> versions` |
+| `SELF_SIGNED_CERT_IN_CHAIN` | Registry | A firewall re-signs HTTPS with its own certificate, which Node.js doesn't trust | Give Node the company's CA (field notes) |
+| `ERESOLVE` | Building the tree | Two packages need conflicting versions of a peer, often react and react-dom | `npm explain`, then align the versions |
+| `EINTEGRITY` | Checking hashes | The bytes don't match the lockfile's hash | Find out why before you regenerate anything |
+| `npm warn install-scripts` | Scripts | A package wants to run code at install time | Review it, then approve or deny |
+| `N vulnerabilities` | Audit | Known advisories for versions in your tree | `npm audit`, then `npm audit fix` (not `--force` blindly) |
+
+The two "doesn't exist" errors are worth seeing side by side, because they're easy to confuse:
+
+```text title="Terminal (real output)"
+$ npm install expresss-not-a-real-package
+npm error code E404
+npm error 404 Not Found - GET https://registry.npmjs.org/expresss-not-a-real-package - Not found
+
+$ npm install express@9
+npm error code ETARGET
+npm error notarget No matching version found for express@9.
+```
+
+`E404` means the name is unknown. `ETARGET` means the name is fine and the version isn't.
+
+And here is `ERESOLVE`, from asking for react 17 and react-dom 18 together:
+
+```text title="npm install react@17 react-dom@18 (real output)"
+npm error code ERESOLVE
+npm error ERESOLVE unable to resolve dependency tree
+npm error
+npm error While resolving: shop-api@1.0.0
+npm error Found: react@17.0.2
+npm error node_modules/react
+npm error   react@"17" from the root project
+npm error
+npm error Could not resolve dependency:
+npm error peer react@"^18.3.1" from react-dom@18.3.1
+npm error node_modules/react-dom
+npm error   react-dom@"18" from the root project
+npm error
+npm error Fix the upstream dependency conflict, or retry this command with --force or --legacy-peer-deps to accept an incorrect (and potentially broken) dependency resolution.
+```
+
+Read it from the bottom of the tree up: react-dom 18 has a <Term id="peer-dependency">peer dependency</Term> on react 18, and you asked for react 17. npm's own message calls `--force` and `--legacy-peer-deps` "incorrect (and potentially broken)". They don't fix the conflict; they install it.
+
+## Field notes: debugging an install
+
+<Steps>
+<Step title="Read the code, then find the step">
+Scroll up past the noise to the first `npm error code` line. It names the stage that failed, using the table above. Everything after that line is detail. `npm error A complete log of this run can be found in:` points to the full debug log, which is worth opening for anything network-related.
+</Step>
+<Step title="Ask who brought a package in">
+`npm explain <pkg>` prints every path from your project to that package. `npm ls <pkg>` shows where each copy sits and its version. Use them before you add an override or delete anything: the package you're fighting is usually there because of something else.
+</Step>
+<Step title="Watch the network">
+`npm install --loglevel http` prints every registry request with its status, its time and whether the cache answered. A wall of `(cache miss)` lines at 500 ms each is a slow install explained. A request that hangs and then fails is a network problem, not an npm problem.
+</Step>
+<Step title="Time the stages">
+`npm install --timing` prints how long each stage took: `idealTree` (resolving), `reify:unpack` (writing files), `reify:audit` and more. If `idealTree` dominates, commit your lockfile. If `reify:unpack` dominates on Windows, your antivirus is probably scanning every file npm writes.
+</Step>
+<Step title="Behind a company proxy, give Node the certificate">
+`SELF_SIGNED_CERT_IN_CHAIN` means something between you and the registry is re-signing HTTPS. We reproduced it with a local server that does exactly that, then fixed it two ways: `npm config set cafile corp-ca.pem`, or the environment variable `NODE_EXTRA_CA_CERTS=corp-ca.pem`. If the certificate is already trusted by your operating system, `NODE_OPTIONS=--use-system-ca` tells Node.js to use that store. Don't set `strict-ssl=false`: it turns off the check for every site, not just the proxy.
+</Step>
+<Step title="Check the cache before blaming it">
+`npm cache verify` re-checks every file in the cache against its hash and cleans up anything broken:
+
+```text title="Terminal (real output)"
+Cache verified and compressed (…\_cacache)
+Content verified: 146 (5905478 bytes)
+Index entries: 146
+Finished in 4.427s
+```
+
+Because every file is stored under its hash, a corrupted cache entry is caught at install time anyway. `npm cache clean --force` is rarely the fix it's said to be.
+</Step>
+<Step title="Know your install scripts">
+`npm query ":attr(scripts, [postinstall])"` lists every package in your tree that runs a `postinstall`; swap in `install` or `preinstall` for the others. In CI, `npm ci --ignore-scripts` is a reasonable default if your tree doesn't need them, and with npm 12 the `allowScripts` list in `package.json` becomes your reviewed allowlist.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"package.json says which version I get."** It says which versions you'll accept. The version you get depends on the registry on the day you install, unless a lockfile says otherwise.
+
+**"npm install just downloads files."** It resolves a tree, checks hashes and, with npm 11 and earlier, runs other people's code on your machine before you've imported a single package.
+
+**"`--force` and `--legacy-peer-deps` fix ERESOLVE."** They switch off the check that found the conflict. The conflict is still there, waiting for runtime.
+
+**"When in doubt, `npm cache clean --force`."** The cache is checked by hash on every install. Most "cache problems" are lockfile, network or registry problems.
+
+**"found 0 vulnerabilities means my dependencies are safe."** It means none of today's *known* advisories match. A malicious install script isn't an advisory until someone notices it.
+
+**"Deleting node_modules and reinstalling gives me the same thing."** Only if a lockfile is there. Without one, you get the newest versions that match, which may not be what you had.
+
+## Summary
+
+<FiveQuestions
+  problem="Your app depends on code other people wrote, which depends on code yet others wrote. npm turns a few version ranges into a complete, checked, working tree of exact packages, and records it so it can be built again."
+  sees="`added 65 packages, and audited 66 packages in 14s`, a node_modules folder far bigger than your project, `found N vulnerabilities`, install-script warnings, and errors such as `E404`, `ETARGET`, `ERESOLVE`, `EINTEGRITY` and `SELF_SIGNED_CERT_IN_CHAIN`."
+  underneath="npm fetches each package's metadata from the registry, picks the newest version inside each range, repeats for every dependency to build the ideal tree, fetches each tarball through a cache addressed by hash, checks its sha512, unpacks it into node_modules, links commands into .bin, runs or blocks install scripts, writes package-lock.json and asks the registry for known vulnerabilities."
+  breaks="Typos and missing versions at the registry, company proxies that re-sign HTTPS, peer conflicts while building the tree, hash mismatches after a bad merge or a changed tarball, and install scripts that run code you never reviewed."
+  misconception="That package.json pins versions, that installing only copies files, that `--force` fixes ERESOLVE, that clearing the cache fixes most problems, and that `found 0 vulnerabilities` means safe."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "What does `\"express\": \"^5.3.0\"` in package.json mean?",
+      options: ["Exactly version 5.3.0", "5.3.0 or any newer version below 6.0.0", "Any version of express", "5.3.0 or older"],
+      answer: 1,
+      why: "The caret allows newer minor and patch versions within the same major version. npm installs the newest one that matches.",
+    },
+    {
+      q: "You asked for one package and got 65. Why?",
+      options: ["npm adds popular packages to every project", "express depends on 28 packages, which depend on more: npm installs the whole tree", "npm downloads several versions of express", "The cache added extra packages"],
+      answer: 1,
+      why: "Transitive dependencies: every package's own dependencies are installed too, all the way down.",
+    },
+    {
+      q: "Why are files in npm's cache named like `01/35/94bf7f3b8be9…`?",
+      options: ["They're encrypted", "The name is the file's sha512 hash, so a file is stored under its own fingerprint", "They're random to save space", "They're sorted by download date"],
+      answer: 1,
+      why: "The cache is content-addressed: the same content always has the same name, and changed content can't hide under an old name.",
+    },
+    {
+      q: "What does `EINTEGRITY` mean?",
+      options: ["The registry is down", "The downloaded bytes don't match the expected sha512 hash", "A package has a vulnerability", "Your Node.js version is too old"],
+      answer: 1,
+      why: "npm hashes every tarball after download and compares it with the hash from the lockfile or metadata. A mismatch stops the install.",
+    },
+    {
+      q: "With a warm cache and a committed lockfile, what can npm skip entirely?",
+      options: ["Unpacking files", "Fetching metadata to resolve versions: the lockfile already names them", "Writing node_modules", "Checking integrity hashes"],
+      answer: 1,
+      why: "In our test it made zero metadata requests, and building the tree dropped from about 6 s to 47 ms.",
+    },
+    {
+      q: "What changed about install scripts in npm 12?",
+      options: ["They were removed", "They're blocked unless the package is approved in package.json's allowScripts", "They run twice", "They only run in CI"],
+      answer: 1,
+      why: "npm 11 runs them and warns; npm 12 blocks them until you run npm install-scripts approve, which records the exact version.",
+    },
+    {
+      q: "`E404` vs `ETARGET`: which one means the package exists but the version doesn't?",
+      options: ["E404", "ETARGET", "Both", "Neither"],
+      answer: 1,
+      why: "E404: unknown name. ETARGET: known name, no version matching your range.",
+    },
+    {
+      q: "npm suggests `--legacy-peer-deps` for an ERESOLVE error. What does it do?",
+      options: ["Fixes the version conflict", "Ignores the peer dependency check and installs a tree npm knows may be broken", "Downgrades npm", "Clears the cache"],
+      answer: 1,
+      why: "npm's own message calls it an \"incorrect (and potentially broken) dependency resolution\". The conflict remains.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="Walk me through what happens when you run npm install.">
+npm reads package.json (and package-lock.json if present). Without a lockfile it fetches each dependency's metadata from the registry and picks the newest version matching each range, recursively, to build the ideal tree; with a lockfile it reads the exact versions from it. It compares that tree with what's in node_modules to work out what to add, change or remove. For each package to add, it fetches the tarball from its cache or the registry, verifies the tarball's sha512 integrity, and unpacks it, mostly hoisted to the top of node_modules. It links package binaries into node_modules/.bin, runs install scripts (npm 12 blocks unapproved ones), writes package-lock.json, and runs an audit against the registry's advisory database.
+</Question>
+<Question q="What's the difference between a dependency's version in package.json and in package-lock.json?">
+package.json holds a range the project accepts, like ^5.3.0, which any newer 5.x satisfies. package-lock.json holds what was actually installed: the exact version, the resolved tarball URL and the integrity hash, for every package in the tree, including transitive ones. The lockfile is what makes two installs produce the same tree.
+</Question>
+<Question q="What is the integrity field, and what does EINTEGRITY tell you?">
+It's a Subresource Integrity-style hash, usually sha512, of the package tarball. npm recomputes the hash of every tarball it downloads or reads from cache and compares. EINTEGRITY means the bytes differ from what the lockfile or metadata expects: a corrupted or truncated download (npm retries), a lockfile mangled in a merge, a registry or mirror serving different bytes for the same version, or tampering. You investigate before regenerating the lockfile, because regenerating accepts whatever bytes are there now.
+</Question>
+<Question q="How does npm's cache work, and when does it hit the network?">
+It's a content-addressable store (cacache): tarballs and metadata are stored under their hash, with an index mapping URLs to content. Tarballs are immutable, so once cached they're reused without asking. Metadata follows the registry's HTTP caching headers (max-age=300), so within five minutes it's a cache hit, after that npm revalidates with a conditional request. With a lockfile, npm needs no metadata at all for locked packages, only the tarballs.
+</Question>
+<Question q="Why are install scripts a security concern, and how do you control them?">
+preinstall, install and postinstall scripts run arbitrary commands with the installing user's permissions, from any package in the tree, before your code imports anything. Several real supply-chain attacks used them. Controls: npm ci --ignore-scripts where possible; listing packages with scripts via npm query ":attr(scripts, [postinstall])"; npm 12's allowScripts, where each package version must be approved; reviewing new versions before approving; and lockfiles so versions don't change silently.
+</Question>
+<Question q="You get ERESOLVE in CI. How do you approach it?">
+Read the error: it names the package being resolved, what was found, and which peer dependency couldn't be satisfied. Use npm explain on both packages to see who requires what. Then align versions: upgrade the package whose peer range is too narrow, or the shared peer, or pin compatible versions. Use overrides only deliberately. --legacy-peer-deps or --force only skip the check, so the incompatibility moves to runtime.
+</Question>
+<Question q="npm install fails with SELF_SIGNED_CERT_IN_CHAIN on a corporate network. What's going on and what's the right fix?">
+A proxy or firewall is intercepting HTTPS and re-signing it with the company's own certificate authority, which Node.js's built-in CA list doesn't include. The right fix is to trust that CA: npm config set cafile with the company's root certificate, NODE_EXTRA_CA_CERTS pointing at it, or NODE_OPTIONS=--use-system-ca if the operating system already trusts it. Disabling strict-ssl turns off verification for every host, so it trades one problem for a much worse one.
+</Question>
+</Interview>
+
+## What's next
+
+npm unpacked 65 packages, but where exactly did it put them? Why does one dependency sometimes appear four times? And how does `require('express')` find the right folder among hundreds? Next: **Why Is node_modules So Huge? And How Does require() Find Anything in It?** [Read it now](/posts/why-node-modules-is-huge/), or [see everything in Week 2](/#this-week).
+
+### Sources and further reading
+
+- npm docs: [npm install](https://docs.npmjs.com/cli/v11/commands/npm-install), [npm ci](https://docs.npmjs.com/cli/v11/commands/npm-ci), [npm explain](https://docs.npmjs.com/cli/v11/commands/npm-explain), [npm query](https://docs.npmjs.com/cli/v11/commands/npm-query) and [npm cache](https://docs.npmjs.com/cli/v11/commands/npm-cache)
+- npm docs: [package-lock.json](https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json) and [scripts](https://docs.npmjs.com/cli/v11/using-npm/scripts), including the install lifecycle
+- npm docs: [npm audit](https://docs.npmjs.com/cli/v11/commands/npm-audit)
+- npm blog and changelog: [npm CLI releases](https://github.com/npm/cli/releases), for the npm 12 install-scripts change
+- Node.js docs: [NODE_EXTRA_CA_CERTS](https://nodejs.org/api/cli.html#node_extra_ca_certsfile) and [--use-system-ca](https://nodejs.org/api/cli.html#--use-system-ca)
+- npm docs: [About semantic versioning](https://docs.npmjs.com/about-semantic-versioning), and [node-semver](https://github.com/npm/node-semver) for the full range syntax, `^` and `~` included
