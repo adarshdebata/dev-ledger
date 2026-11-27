@@ -11,6 +11,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const latest = posts[0]?.date;
   return [
     { url: absoluteUrl("/"), lastModified: latest },
+    { url: absoluteUrl("/posts/"), lastModified: latest },
     { url: absoluteUrl("/about/") },
     { url: absoluteUrl("/tags/") },
     { url: absoluteUrl("/series/") },
