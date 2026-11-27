@@ -12,6 +12,9 @@ updates:
       # The PostCSS plugin pins its own tailwindcss: updated apart, two copies get installed.
       tailwind:
         patterns: ["tailwindcss", "@tailwindcss/postcss"]
+      # react and react-dom must be the same version, or the production client throws "Incompatible React versions".
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
     ignore:
       # The site builds on Node 24 (see deploy.yml), so its types stay on the 24.x line.
       - dependency-name: "@types/node"
