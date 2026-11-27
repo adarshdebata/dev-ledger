@@ -13,6 +13,7 @@ const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 const nav = [
   { href: "/", label: "Home" },
+  { href: "/posts/", label: "All blogs" },
   { href: "/series/", label: "Series" },
   { href: "/case-studies/", label: "Case studies" },
   { href: "/about/", label: "About" },

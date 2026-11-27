@@ -36,6 +36,7 @@ export function SiteFooter() {
         <div>
           <h2 className="eyebrow text-subtle">More</h2>
           <ul className="mt-4 space-y-2.5 text-sm">
+            <li><Link href="/posts/" className="text-muted hover:text-fg">All blogs</Link></li>
             <li><Link href="/case-studies/" className="text-muted hover:text-fg">Case studies</Link></li>
             <li><Link href="/chains/request/" className="text-muted hover:text-fg">Follow One Request</Link></li>
             <li><Link href="/chains/payment/" className="text-muted hover:text-fg">Follow One Payment</Link></li>

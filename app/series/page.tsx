@@ -18,7 +18,11 @@ export default function SeriesIndexPage() {
     <>
       <PageHeader eyebrow="Series" title="Read in order, or jump in anywhere">
         Each series starts with something you already use and goes one step deeper with every article. Every series shows its
-        newest articles first; open the full list when you want them all.
+        newest articles first; open the full list when you want them all. Looking for one topic?{" "}
+        <Link href="/posts/" className="font-medium text-fg underline decoration-line-strong underline-offset-4 hover:decoration-accent">
+          Search all blogs
+        </Link>
+        .
       </PageHeader>
 
       <div className="container-page py-6">
