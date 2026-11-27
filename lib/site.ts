@@ -100,6 +100,7 @@ export const weeks: Week[] = [
       {
         day: 4,
         title: "Your App Works with npm. Why Does It Break with pnpm?",
+        slug: "npm-works-pnpm-breaks",
         about:
           "The shared store, hard links and symlinks behind pnpm's node_modules, why they save so much disk, and the phantom dependencies that npm's flat folder let you use without declaring.",
       },

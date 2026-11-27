@@ -1,0 +1,353 @@
+---
+title: "Your App Works with npm. Why Does It Break with pnpm?"
+subtitle: "pnpm's node_modules is a chain of links into one shared store. Follow it to a file on disk, and see why it saves space and why your undeclared require() fails."
+date: 2026-11-28
+series: 2
+roadmap: [38]
+tags: [pnpm, npm, nodejs, packages, debugging]
+author: adarshdebata
+thumb: deps
+summary: "pnpm keeps every file once, in a content-addressed store, and hard-links it into each project. Each package version gets its own folder in node_modules/.pnpm with links to exactly its own dependencies, and your node_modules holds only what you declared. Node's normal lookup works unchanged, but phantom dependencies fail with MODULE_NOT_FOUND. In pnpm 12, layout settings live in pnpm-workspace.yaml, not .npmrc, and dependency build scripts are blocked until approved."
+---
+
+**You use it every day. But do you actually know what happens underneath?** This week we've followed [npm install](/posts/you-ran-npm-install/), opened [node_modules](/posts/why-node-modules-is-huge/) and read [the lockfile](/posts/what-your-lockfile-locks/). Now the same project with a different package manager.
+
+I've written before about [migrating a production service from npm to pnpm](https://adarshdebata.github.io/npm-to-pnpm-migration/): the undeclared dependency it exposed, a Jest 30 surprise, and a Docker build we'd been getting wrong. That's the story. This post is the mechanism underneath it, taken apart on a laptop, so that the next time pnpm "breaks" something, you can see exactly why.
+
+## What you see
+
+Switch an npm project to pnpm, and some of these turn up within the hour:
+
+- **Code that worked for years now fails:**
+
+```text title="require('debug') under pnpm (real output, excerpt)"
+Error: Cannot find module 'debug'
+  code: 'MODULE_NOT_FOUND'
+```
+
+- **The install itself fails** when a dependency has a build script:
+
+```text title="pnpm add esbuild, pnpm 12 (real output)"
+Error: ERR_PNPM_IGNORED_BUILDS
+
+  × adding a new package
+  ╰─▶ Ignored build scripts: esbuild@0.28.2
+  help: Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.
+```
+
+- **Settings that do nothing.** You copy `shamefully-hoist=true` into `.npmrc` from a blog post, and nothing changes.
+- **And something pleasant:** a second project with the same dependencies installs without downloading anything.
+
+```text title="pnpm add express@4 in a second project (real output)"
+Packages are hard linked from the content-addressable store to the virtual store.
+Packages: +68
+Progress: resolved 68, reused 68, downloaded 0, added 68, done
+```
+
+Before reading on:
+
+<Predict
+  question="Three projects on the same drive all use express 4.22.3, installed with pnpm. How many copies of express's files are on disk?"
+  options={[
+    "Three: one per project",
+    "One: every project's files are hard links to the same files in pnpm's store",
+    "Four: one per project plus the store",
+    "None: pnpm downloads them at runtime",
+  ]}
+  answer={1}
+>
+**One.** We checked with Windows' `fsutil hardlink list`: express's `application.js` had exactly three names, one in pnpm's store and one in each of two projects, and all three are the same file. Adding a project adds a name, not a copy. That's where pnpm's disk savings come from, and, as you'll see, one of its sharpest edges.
+</Predict>
+
+## What's underneath
+
+pnpm builds `node_modules` out of three layers. From the bottom up:
+
+### Layer 1: one store for the whole machine
+
+pnpm keeps every file of every package version it has ever installed in a single <Term id="content-addressable-store">content-addressable store</Term>, named by a hash of each file's contents:
+
+```text title="Terminal (real output, user name replaced)"
+$ pnpm store path
+C:\Users\you\AppData\Local\pnpm\store\v11
+```
+
+Identical files are stored once, even across different packages and versions. A new version of a library that changed three files out of three hundred adds three files to the store, not three hundred.
+
+### Layer 2: hard links, not copies
+
+To put a package in your project, pnpm doesn't copy its files. It creates <Term id="hard-link">hard links</Term>: second names for the files already in the store. Here's express's `application.js`, after installing express in two projects, `pn1` and `pn2`:
+
+```text title="fsutil hardlink list …\express\lib\application.js (real output, shortened)"
+\…\pnpm\store\v11\files\c0\63277a59b83dffc085116769475ec5cce1c47c167b9bd2246e8bda04f0ebc2773b5f06e3b44fc5ed057e043f6d33e77741f34d15e22542134e3865574a29be
+\…\pn1\node_modules\.pnpm\express@4.22.3\node_modules\express\lib\application.js
+\…\pn2\node_modules\.pnpm\express@4.22.3\node_modules\express\lib\application.js
+```
+
+Three names, one file, 14,593 bytes on disk once. The store's name for it, `files/c0/63277a…`, is its hash.
+
+Hard links can't cross from one drive to another, so pnpm keeps a store per drive. Our project on `D:` used a different one:
+
+```text title="pnpm store path, in a project on drive D: (real output)"
+D:\.pnpm-store\v11
+```
+
+### Layer 3: links that rebuild the tree
+
+The clever part is how pnpm arranges those files so that Node.js, which knows nothing about pnpm, still finds everything. Every package version gets its own folder in `node_modules/.pnpm`, named after it:
+
+```text title="ls node_modules/.pnpm (real output, first lines)"
+accepts@1.3.8
+array-flatten@1.1.1
+body-parser@1.20.9
+bytes@3.1.2
+```
+
+Inside each one, a `node_modules` folder holds the package itself, plus a <Term id="symlink">link</Term> for each of **its own** dependencies, pointing at their folders:
+
+```text title="ls -la node_modules/.pnpm/express@4.22.3/node_modules (real output, shortened)"
+accepts -> …/node_modules/.pnpm/accepts@1.3.8/node_modules/accepts
+body-parser -> …/node_modules/.pnpm/body-parser@1.20.9/node_modules/body-parser
+debug -> …/node_modules/.pnpm/debug@2.6.9/node_modules/debug
+express
+```
+
+And your project's own `node_modules` holds only links to what *you* declared, plus the hidden `.pnpm` folder:
+
+```text title="ls -la node_modules (real output)"
+.modules.yaml
+.pnpm
+.pnpm-workspace-state-v1.json
+express -> …/node_modules/.pnpm/express@4.22.3/node_modules/express
+```
+
+On Windows those links are junctions, Windows' folder links; on macOS and Linux they're symlinks. Press **Next** to follow the chain from your project down to a file on disk:
+
+<PnpmLinks />
+
+### Why Node.js still finds everything
+
+Nothing here changes how `require()` works. It's the same climb through `node_modules` folders as in [the node_modules post](/posts/why-node-modules-is-huge/), with one detail doing all the work: **Node.js follows a link to the real folder before it starts climbing.**
+
+So when express's code calls `require('debug')`, Node knows express really lives at `.pnpm/express@4.22.3/node_modules/express`. It climbs from there, and the first `node_modules` it reaches is `.pnpm/express@4.22.3/node_modules`, where the `debug` link sits right next to express:
+
+```text title="require.resolve('debug') from express's real folder (real output)"
+node_modules\.pnpm\debug@2.6.9\node_modules\debug\src\index.js
+```
+
+Your code climbs from your project's folder, and your `node_modules` has only `express` in it. There's no `debug` for it to find, so the phantom dependency that npm's flat folder allowed fails:
+
+```text title="require('debug') from your code (real output)"
+Error: Cannot find module 'debug'
+  code: 'MODULE_NOT_FOUND'
+```
+
+That's the whole trick. Each package can see exactly the dependencies it declared, and so can you. Nothing is broken; something that was always wrong is now visible.
+
+<Callout type="insight" title="pnpm hoists too, just out of your sight">
+pnpm doesn't refuse hoisting completely. It hoists every package into `node_modules/.pnpm/node_modules` (66 entries in our Express project). Code inside `.pnpm` passes that folder on its way up, so a *package* with a phantom dependency of its own still works. Your code never passes through it, so yours doesn't. Strict for you, forgiving for your dependencies.
+</Callout>
+
+### Peer dependencies get their own folders
+
+One package can need a different set of links depending on its peers. pnpm handles that by giving each combination its own folder. These are from this blog's own `node_modules`:
+
+```text title="ls node_modules/.pnpm, filtered (real output)"
+lucide-react@1.75.0_@types+react@19.3.0_react@19.3.0
+motion@14.14.0_react-dom@19.3.0_react@19.3.0__react@19.3.0
+```
+
+If two parts of a project used `motion` with different versions of React, pnpm would create two folders for `motion`, each linking to the right React. The name tells you which combination you're looking at.
+
+### The sharp edge: hard links share edits
+
+Because every project's copy *is* the store's file, changing it in one place changes it everywhere. We appended one comment line to express's `application.js` inside `pn1`'s `node_modules`. Then we looked at `pn2`:
+
+```text title="Terminal (real output)"
+$ tail -1 pn2/node_modules/.pnpm/express@4.22.3/node_modules/express/lib/application.js
+// patched by hand in project 1
+
+$ pnpm store status
+Error: ERR_PNPM_MODIFIED_DEPENDENCY
+
+  × Packages in the store have been mutated
+  │ These packages are modified:
+  │ express@4.22.3
+```
+
+A quick debugging edit in one project's `node_modules` silently patched every project on the machine that uses that version. (We restored the original bytes; `pnpm store status` then said `Packages in the store are untouched`.) If you need to patch a dependency, use `pnpm patch`, which copies the package out first and records the change in your project.
+
+### pnpm 12: where settings live now
+
+pnpm 12 reads its layout settings from `pnpm-workspace.yaml`, in camelCase. Settings in `.npmrc` that older guides recommend were simply ignored in our tests, with no warning:
+
+| You want | `.npmrc` (old guides) | `pnpm-workspace.yaml` (pnpm 12) | Our result |
+| --- | --- | --- | --- |
+| npm's flat layout | `node-linker=hoisted` | `nodeLinker: hoisted` | `.npmrc`: ignored. YAML: real folders, and `require('debug')` worked again |
+| Hoist everything to the top | `shamefully-hoist=true` | `shamefullyHoist: true` | `.npmrc`: ignored. YAML: `debug` appeared at the top |
+
+Build scripts moved too. pnpm blocks dependencies' install scripts until you approve them, and in pnpm 12 an unapproved build makes `pnpm install` exit with status 1, which fails CI. `pnpm approve-builds esbuild` ran the script and recorded the decision:
+
+```yaml title="pnpm-workspace.yaml (written by pnpm approve-builds)"
+allowBuilds:
+  esbuild: true
+```
+
+The [migration article](https://adarshdebata.github.io/npm-to-pnpm-migration/) covers the approve-builds gotcha from the first time it bit us; the mechanics are the same, only the file it writes changed.
+
+<Callout type="story" title="Think of it like this">
+npm gives every project its own full bookshelf, with every book any book refers to standing on it. pnpm keeps one library for the whole town. Each project gets a shelf of cards, one per book it asked for, and each book's card shows exactly the books that book cites. You can only reach what's on your cards. And because everyone's card points at the same physical book, if you scribble in it, every reader in town sees your scribble.
+</Callout>
+
+## What breaks
+
+| What you see | What's really happening | Fix |
+| --- | --- | --- |
+| `Cannot find module 'x'` (`MODULE_NOT_FOUND`) | `x` is a phantom dependency; pnpm only links what you declared | Add `x` to your `dependencies` |
+| A tool can't find its plugin or preset | The tool resolves plugins from its own folder, and the plugin isn't its declared dependency | Declare the plugin yourself; if that's not enough, `publicHoistPattern` for that package |
+| `.npmrc` settings have no effect | pnpm 12 reads layout settings from `pnpm-workspace.yaml` | Move them, in camelCase |
+| `ERR_PNPM_IGNORED_BUILDS`, install exits 1 | A dependency's build script is blocked until approved | Review it, then `pnpm approve-builds` |
+| `ERR_PNPM_MODIFIED_DEPENDENCY` | Someone edited a file in `node_modules`, which edited the store | `pnpm store status`; reinstall the package; use `pnpm patch` for real patches |
+| Everything breaks after copying the project folder | The links point at absolute paths and at a store that isn't there | Never copy `node_modules`; run `pnpm install` where the code runs (the [migration article's](https://adarshdebata.github.io/npm-to-pnpm-migration/) Docker section) |
+| No disk savings on a second drive | Hard links can't cross drives, so each drive gets its own store | Expected; keep projects on one drive if it matters |
+
+## Field notes: switching a project to pnpm
+
+<Steps>
+<Step title="Find the phantoms before you switch">
+Run your tests on a non-hoisted layout while still on npm: `npm install --install-strategy=linked` gives npm the same strict layout, and every `MODULE_NOT_FOUND` is a dependency to declare. Then switching to pnpm is a non-event.
+</Step>
+<Step title="Ask who needs a package">
+`pnpm why debug` prints the tree upside down, from the package to your project:
+
+```text title="pnpm why debug (real output, shortened)"
+debug@2.6.9
+├─┬ body-parser@1.20.9
+│ └─┬ express@4.22.3
+│   └── shop-api@1.0.0 (dependencies)
+├── express@4.22.3 [deduped]
+└─┬ send@0.19.2
+  └── express@4.22.3 [deduped]
+```
+
+If the answer is "only other packages", your code shouldn't be requiring it without declaring it.
+</Step>
+<Step title="Use the escape hatches in order">
+Declare the dependency first: it's the real fix. If a tool still can't find a plugin, `publicHoistPattern` for that one package. `shamefullyHoist: true` makes everything reachable again. `nodeLinker: hoisted` gives you npm's whole layout back. Each step trades away more of what you switched for.
+</Step>
+<Step title="Look after the store">
+`pnpm store path` shows where it is, `pnpm store status` checks that nothing in it has been modified, and `pnpm store prune` removes package versions no project uses any more. The store only grows until you prune it.
+</Step>
+<Step title="Don't edit node_modules">
+With npm, a quick edit in `node_modules` affects one project. With pnpm, it changes the file every project shares. Use `pnpm patch <pkg>`, which copies the package out, lets you edit it, and saves the change as a patch file in your repo.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"pnpm is npm, but faster."** It installs a different shape of `node_modules`. The speed is a side effect of the store; the strictness is the real change.
+
+**"pnpm broke my app."** It stopped your app from reaching packages it never declared. The code was relying on luck under npm.
+
+**"Hard links are just symlinks."** A symlink is a pointer to a path. A hard link *is* the file, under a second name: delete one name and the file lives on; edit it under one name and every name sees the change.
+
+**"pnpm's node_modules is nearly empty, so it uses no space."** The files are real and take space once, in the store. The project's folders are mostly links to them.
+
+**"Put shamefully-hoist=true in .npmrc."** pnpm 12 ignores that line. The setting is `shamefullyHoist: true` in `pnpm-workspace.yaml`, and it's a last resort.
+
+## Summary
+
+<FiveQuestions
+  problem="Installing every package into every project wastes disk and time, and npm's flat layout lets code use packages it never declared. pnpm stores each file once and gives every package, and your project, access to exactly the dependencies it declared."
+  sees="`Cannot find module` for packages that worked under npm, `reused 68, downloaded 0` on a second install, `ERR_PNPM_IGNORED_BUILDS`, .npmrc settings that do nothing, and `ERR_PNPM_MODIFIED_DEPENDENCY` after someone edits node_modules."
+  underneath="A content-addressed store holds every file once. Projects get hard links to those files inside node_modules/.pnpm/<name>@<version>/node_modules, next to links to that package's own dependencies; your node_modules links only your declared dependencies. Node follows links to real paths before climbing, so each package finds exactly its declared dependencies."
+  breaks="Phantom dependencies, tools that load undeclared plugins, settings left in .npmrc, unapproved build scripts that fail the install, edits in node_modules that change every project's copy, and copied project folders whose links point nowhere."
+  misconception="That pnpm is just a faster npm, that it breaks working code, that hard links are symlinks, that its node_modules takes no space, and that .npmrc hoisting settings still apply."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "What's in your project's node_modules after `pnpm add express`?",
+      options: ["Real copies of all 68 packages", "A link to express and the hidden .pnpm folder", "Nothing: pnpm uses a global folder", "A zip file"],
+      answer: 1,
+      why: "Only declared dependencies are linked at the top; everything else lives in node_modules/.pnpm.",
+    },
+    {
+      q: "Why does express's own require('debug') work under pnpm?",
+      options: ["pnpm patches require()", "Node follows the link to express's real folder, and debug is linked right beside it in .pnpm/express@4.22.3/node_modules", "debug is installed globally", "pnpm hoists debug to the top"],
+      answer: 1,
+      why: "Each package version's folder holds links to exactly its own dependencies, and Node climbs from the real path.",
+    },
+    {
+      q: "Why does your own undeclared require('debug') fail under pnpm but work under npm?",
+      options: ["pnpm deletes debug", "Your node_modules only contains what you declared; npm's flat layout hoisted debug where your code could see it", "debug doesn't support pnpm", "pnpm uses ES modules only"],
+      answer: 1,
+      why: "It was a phantom dependency all along. pnpm's layout makes it visible.",
+    },
+    {
+      q: "Three projects use express 4.22.3 on one drive. How many copies of its files exist?",
+      options: ["Three", "One, with a hard link from each project", "Four", "It depends on the cache"],
+      answer: 1,
+      why: "fsutil hardlink list showed one file with a name in the store and one in each project.",
+    },
+    {
+      q: "You edit a file in node_modules/.pnpm/... to debug something. What happens?",
+      options: ["Only this project changes", "Every project using that package version sees the edit, because it's the same file", "pnpm reverts it immediately", "Nothing: the files are read-only"],
+      answer: 1,
+      why: "Hard links share content. pnpm store status reported ERR_PNPM_MODIFIED_DEPENDENCY afterwards.",
+    },
+    {
+      q: "In pnpm 12, where does `nodeLinker: hoisted` go?",
+      options: [".npmrc", "pnpm-workspace.yaml", "package.json's pnpm field", "An environment variable only"],
+      answer: 1,
+      why: "In our tests the .npmrc spelling was ignored; the YAML setting worked.",
+    },
+    {
+      q: "A project on drive D: uses a different pnpm store from one on C:. Why?",
+      options: ["A bug", "Hard links can't cross drives, so pnpm keeps a store per drive", "The D: drive is slower", "pnpm stores are per user per project"],
+      answer: 1,
+      why: "pnpm store path showed D:\\.pnpm-store\\v11 for the project on D:.",
+    },
+    {
+      q: "What does pnpm 12 do when a dependency has an unapproved build script?",
+      options: ["Runs it silently", "Blocks it, and pnpm install exits with status 1 until you approve or deny it", "Deletes the package", "Asks the registry"],
+      answer: 1,
+      why: "ERR_PNPM_IGNORED_BUILDS; pnpm approve-builds records allowBuilds in pnpm-workspace.yaml.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="How is pnpm's node_modules structured, and why does Node.js resolution still work?">
+pnpm keeps package files in a global content-addressable store and hard-links them into `node_modules/.pnpm/<name>@<version>/node_modules/<name>`. Next to each package, in the same node_modules folder, it creates symlinks (junctions on Windows) to that package's dependencies. The project's top-level node_modules contains symlinks only to direct dependencies. Node's resolver follows symlinks to real paths (unless --preserve-symlinks is set) and then searches parent node_modules folders, so from a package's real location the first node_modules it reaches holds exactly its declared dependencies.
+</Question>
+<Question q="What's the difference between a hard link and a symbolic link, and which does pnpm use for what?">
+A symbolic link is a small file containing a path; following it leads to the target, and if the target disappears the link dangles. A hard link is another directory entry for the same file data; all names are equal, the data lives until the last name is removed, and an edit through one name is visible through all of them. pnpm uses hard links (or copy-on-write clones where the filesystem supports them) from the store to the files in .pnpm, and symlinks or junctions for the folder structure that connects packages.
+</Question>
+<Question q="Why do some apps break when migrating from npm to pnpm?">
+Mostly phantom dependencies: code requiring packages it never declared, which npm's hoisting made reachable. pnpm only exposes declared dependencies, so those requires fail with MODULE_NOT_FOUND. Tools that load plugins by name from their own location can fail the same way. Other causes: dependency build scripts that pnpm blocks until approved, and setups that copy node_modules between machines or into Docker images, which breaks the links.
+</Question>
+<Question q="How does pnpm save disk space, and what are the trade-offs?">
+Each file is stored once per drive in the content-addressable store and hard-linked into every project that needs it, so many projects using the same versions cost almost nothing extra, and installs mostly create links instead of downloading. Trade-offs: hard links can't cross drives, so you get one store per drive; edits inside node_modules mutate the shared store (pnpm store status detects it, pnpm patch avoids it); and the store keeps growing until you run pnpm store prune.
+</Question>
+<Question q="A tool can't find its plugin after switching to pnpm. What are your options, in order?">
+First, declare the plugin as a direct dependency of your project, which fixes most cases. If the tool resolves plugins from its own package location, use publicHoistPattern for that plugin so it's linked at the top level. shamefullyHoist hoists everything, recreating npm's reachability, and nodeLinker: hoisted switches to an npm-like flat layout entirely. Each step gives up more strictness, so stop at the first one that works. In pnpm 12, these settings go in pnpm-workspace.yaml.
+</Question>
+</Interview>
+
+## What's next
+
+That's the package side of this week done: npm, node_modules, lockfiles and pnpm. The second half moves to the servers that sit between your app and its users, starting with the one whose name appears in one of the most common errors on the web. Next: **502 Bad Gateway: Who Is the Gateway, and What Went Bad?** [Read it now](/posts/502-bad-gateway/), or [see everything in Week 2](/#this-week).
+
+### Sources and further reading
+
+- pnpm docs: [Motivation](https://pnpm.io/motivation) and [Symlinked node_modules structure](https://pnpm.io/symlinked-node-modules-structure)
+- pnpm docs: [Settings (pnpm-workspace.yaml)](https://pnpm.io/settings), including `nodeLinker`, `shamefullyHoist`, `publicHoistPattern` and `allowBuilds`
+- pnpm docs: [pnpm store](https://pnpm.io/cli/store), [pnpm why](https://pnpm.io/cli/why), [pnpm patch](https://pnpm.io/cli/patch) and [pnpm approve-builds](https://pnpm.io/cli/approve-builds)
+- Node.js docs: [--preserve-symlinks](https://nodejs.org/api/cli.html#--preserve-symlinks), and why Node resolves real paths by default
+- My earlier write-up: [npm to pnpm Migration](https://adarshdebata.github.io/npm-to-pnpm-migration/), the production story this post explains
