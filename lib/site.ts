@@ -120,6 +120,56 @@ export const weeks: Week[] = [
       },
     ],
   },
+  {
+    n: 3,
+    title: "Docker Under the Hood",
+    blurb:
+      "What a container really is, built up one step at a time: what docker run starts, why a container isn't a small VM, how layers and the build cache decide what rebuilds, and where a container's network and data actually live.",
+    days: [
+      {
+        day: 1,
+        title: "You Typed docker run. What Actually Started?",
+        about:
+          "An image is a stack of files, a container is a process. Follow docker run as it pulls layers, creates the container, gives it its own view of the machine and starts your command.",
+      },
+      {
+        day: 2,
+        title: "A Container Isn't a Small VM. So What Is It?",
+        about:
+          "Namespaces decide what a process can see, cgroups decide how much it can use. Why your container shows up in the host's process list, what OOMKilled means, and what isolation you really get.",
+      },
+      {
+        day: 3,
+        title: "You Changed One Line. Why Did Docker Rebuild Everything?",
+        about:
+          "How each Dockerfile instruction becomes a layer, how the build cache decides what to reuse, and why the order of COPY and RUN decides whether a rebuild takes seconds or minutes.",
+      },
+      {
+        day: 4,
+        title: "Why Is Your Docker Image 1 GB?",
+        about:
+          "Where the gigabyte comes from: the base image, build tools, node_modules and caches you never meant to ship. Multi-stage builds, .dockerignore and distroless images, measured.",
+      },
+      {
+        day: 5,
+        title: "Your Containers Find Each Other by Name. Who Answers?",
+        about:
+          "How a container gets its own network and address, how Docker's built-in DNS turns a service name into an IP, and how traffic gets from a container out to the internet and back.",
+      },
+      {
+        day: 6,
+        title: "You Removed the Container. Where Did Your Data Go?",
+        about:
+          "The writable layer that disappears with the container, volumes that outlive it and bind mounts that share your folders, and the permission and performance surprises of each.",
+      },
+      {
+        day: 7,
+        title: "docker compose up Said Started. Why Is Your App Still Failing?",
+        about:
+          "What Compose actually creates, the order it starts things in, why depends_on doesn't wait for your database to be ready, and how health checks fix it.",
+      },
+    ],
+  },
 ];
 
 /** Where a post sits in the weekly plan, and what comes after it: the next day, or the next week's first post. */
