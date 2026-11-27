@@ -4,13 +4,18 @@ import { Callout, CodeBlock, Compare, DevTools, FiveQuestions, H2, H3, SmartLink
 import { CodeTabs, Predict } from "./client-bits";
 import { BindMap } from "./bind";
 import { DnsLookup } from "./dns";
+import { BalancerFlow, EdgeFlow, ProxyFlow } from "./flow";
 import { HandshakeTimeline } from "./handshake";
 import { HeaderTrip } from "./header-trip";
+import { InstallPipeline } from "./install";
 import { Interview, Question } from "./interview";
+import { LockfileTimeline } from "./lockfile";
 import { RequestJourney } from "./journey";
 import { CorsPlayground, HelmetLab } from "./lazy";
 import { Quiz } from "./quiz";
+import { RequireWalk } from "./require-walk";
 import { OriginCompare } from "./origin-compare";
+import { PnpmLinks } from "./pnpm-links";
 import { SequenceDiagram } from "./sequence-diagram";
 import { BitLayout, FirstDigitTimeline, FixFlow, FutureSweep, IdMachine, RoundingRows } from "./snowflake";
 import { Term } from "./term";
@@ -54,6 +59,13 @@ export function mdxComponents(slug: string, section: "posts" | "case-studies" = 
     BindMap,
     HandshakeTimeline,
     HeaderTrip,
+    InstallPipeline,
+    RequireWalk,
+    LockfileTimeline,
+    PnpmLinks,
+    ProxyFlow,
+    BalancerFlow,
+    EdgeFlow,
     TimingTab,
     IdMachine,
     BitLayout,

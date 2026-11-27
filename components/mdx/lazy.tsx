@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
+import type { FlowData } from "./flow-data";
 
 function Placeholder({ label, className = "h-[34rem]" }: { label: string; className?: string }) {
   return (
@@ -162,6 +163,76 @@ export function JourneyPlayer() {
   return (
     <WhenNear label="request journey" className="h-[38rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
       <Journey />
+    </WhenNear>
+  );
+}
+
+const Install = dynamic(() => import("./install-player"), {
+  ssr: false,
+  loading: () => <Placeholder label="npm install player" className="h-[40rem]" />,
+});
+
+/** Only for screens wide enough for it, and only when motion is welcome. */
+export function InstallPlayer() {
+  return (
+    <WhenNear label="npm install player" className="h-[40rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
+      <Install />
+    </WhenNear>
+  );
+}
+
+const Require = dynamic(() => import("./require-player"), {
+  ssr: false,
+  loading: () => <Placeholder label="node_modules player" className="h-[44rem]" />,
+});
+
+/** Only for screens wide enough for it, and only when motion is welcome. */
+export function RequirePlayer() {
+  return (
+    <WhenNear label="node_modules player" className="h-[44rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
+      <Require />
+    </WhenNear>
+  );
+}
+
+const Lockfile = dynamic(() => import("./lockfile-player"), {
+  ssr: false,
+  loading: () => <Placeholder label="lockfile player" className="h-[38rem]" />,
+});
+
+/** Only for screens wide enough for it, and only when motion is welcome. */
+export function LockfilePlayer() {
+  return (
+    <WhenNear label="lockfile player" className="h-[38rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
+      <Lockfile />
+    </WhenNear>
+  );
+}
+
+const Pnpm = dynamic(() => import("./pnpm-player"), {
+  ssr: false,
+  loading: () => <Placeholder label="pnpm player" className="h-[44rem]" />,
+});
+
+/** Only for screens wide enough for it, and only when motion is welcome. */
+export function PnpmPlayer() {
+  return (
+    <WhenNear label="pnpm player" className="h-[44rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
+      <Pnpm />
+    </WhenNear>
+  );
+}
+
+const Flow = dynamic(() => import("./flow-player"), {
+  ssr: false,
+  loading: () => <Placeholder label="request-flow player" className="h-[40rem]" />,
+});
+
+/** Only for screens wide enough for it, and only when motion is welcome. The scenarios come from the page. */
+export function FlowPlayer({ data }: { data: FlowData }) {
+  return (
+    <WhenNear label="request-flow player" className="h-[40rem]" media="(min-width: 48rem) and (prefers-reduced-motion: no-preference)">
+      <Flow data={data} />
     </WhenNear>
   );
 }
