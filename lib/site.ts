@@ -121,6 +121,7 @@ export const weeks: Week[] = [
       {
         day: 7,
         title: "Your Fix Is Live. Why Do Users Still See the Old Version?",
+        slug: "why-users-see-the-old-version",
         about:
           "The caches between your server and your users: how a CDN decides what to keep and for how long, reading HIT and MISS headers, purging, and why hashed file names beat purging.",
       },

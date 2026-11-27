@@ -1,0 +1,313 @@
+---
+title: "Your Fix Is Live. Why Do Users Still See the Old Version?"
+subtitle: "We deployed this blog and watched its CDN. The edge had the new version in 13 seconds; browsers kept the old one for ten minutes. Where the copies live, and why."
+date: 2026-11-28
+series: 2
+roadmap: [25, 26]
+tags: [cdn, caching, http, debugging, networking]
+author: adarshdebata
+thumb: edge
+summary: "Between your server and your users sit caches that answer without asking you: the browser's own cache and a CDN's edge servers. Cache-Control decides how long each may keep a copy; Age, X-Cache and CF-Cache-Status tell you which one answered. When we deployed this blog, GitHub Pages purged its CDN within seconds, but browsers kept their copies for the full max-age. Hashed file names with immutable caching, plus short-lived HTML, make deploys show up at once."
+---
+
+**You use it every day. But do you actually know what happens underneath?** We've followed the request through [a reverse proxy](/posts/502-bad-gateway/) and [a load balancer](/posts/load-balancer-one-busy-server/). The last layer this week is the one that tries hardest not to forward your request at all.
+
+You fix a bug, the deploy goes green, you check the site: fixed. Then a message arrives: "still broken for me". A hard refresh fixes it for them. A private window shows the new version. Another user, in another city, sees the old one for another five minutes. Nothing is wrong with your deploy. Your users are being served **copies**, and the copies don't know you've changed anything.
+
+## What you see
+
+- **"It's still broken"** from users, minutes after a fix went live.
+- **"Hard refresh fixed it"**, or "it works in a private window".
+- **Headers you never set:**
+
+```http title="curl -sI https://adarshdebata.github.io/dev-ledger/ (real output, shortened)"
+Server: GitHub.com
+Cache-Control: max-age=600
+Age: 0
+Via: 1.1 varnish
+X-Served-By: cache-del-vibw2260035-DEL
+X-Cache: MISS
+X-Cache-Hits: 0
+Vary: Accept-Encoding
+```
+
+- **In Chrome DevTools**, the Size column says `(disk cache)` or `(memory cache)` instead of a number of bytes: the request never left the browser.
+
+That response is this blog. GitHub Pages puts a CDN, Fastly, in front of every site it hosts, and `cache-del-…` is an edge server in Delhi. So we could run the experiment that matters: deploy, and watch.
+
+<Predict
+  question="This blog's pages are sent with Cache-Control: max-age=600. We deployed a change while the CDN held a copy that was 97 seconds old. When did the CDN start serving the new version?"
+  options={[
+    "After the remaining 503 seconds, when its copy expired",
+    "About 13 seconds after the new files went live: GitHub purged the CDN",
+    "Only after someone purged it by hand",
+    "Never: it needed a new URL",
+  ]}
+  answer={1}
+>
+**About 13 seconds later.** We polled every ten seconds during the deploy. The last old answer came at 20:25:47 (`X-Cache: HIT`, `Age: 97`); the new files went live at 20:25:53; at 20:26:06 the edge answered `MISS` with the new version. GitHub Pages purges its CDN when it deploys. But a reader who loaded the page at 20:25 could keep seeing the old one until 20:35, because that copy is in their browser, and nobody can purge a browser.
+</Predict>
+
+## What's underneath
+
+### Copies, everywhere
+
+A response can be stored, and reused, at several points between your server and a user:
+
+- **The browser cache.** Private to one user. Reused without even asking, while it's fresh.
+- **The CDN.** A <Term id="cdn">CDN</Term> runs <Term id="edge">edge servers</Term> in cities around the world. Each keeps copies of responses and answers nearby users from them. Shared by everyone who reaches that edge.
+- **Your own server**, the <Term id="origin-server">origin</Term>, which only hears about requests the caches couldn't answer.
+
+There can be more (a proxy cache in Nginx, a service worker in the page), but these three explain most "old version" reports.
+
+### Cache-Control decides how long
+
+Each response carries its own instructions in `Cache-Control`:
+
+| Directive | Means |
+| --- | --- |
+| `max-age=600` | Any cache may reuse this for 600 seconds without asking |
+| <Term id="s-maxage">`s-maxage=…`</Term> | The same, but only for shared caches such as CDNs; browsers ignore it |
+| `no-cache` | Keep it, but check with the server before every reuse |
+| `no-store` | Don't keep it at all |
+| `must-revalidate` | Once stale, don't reuse it without checking, even if the server is down |
+| <Term id="immutable">`immutable`</Term> | It will never change at this address; don't check, even on reload |
+| `stale-if-error=600` | If the origin is failing, an expired copy is acceptable for this long |
+
+The same idea, very different choices. These are real headers from sites you use, captured the same day:
+
+| Site and file | Cache-Control | What it means |
+| --- | --- | --- |
+| This blog, any file (GitHub Pages) | `max-age=600` | Ten minutes, for everything. Pages doesn't let you change it |
+| npm registry, package metadata | `public, max-age=300` | Five minutes: new versions appear quickly |
+| npm registry, a tarball | `public, immutable, max-age=31557600` | A year: a published version can never change |
+| cdnjs, React 18.3.1 | `no-transform, public, s-maxage=30672000, max-age=30672000, immutable` | Forever, effectively: the version is in the URL |
+| nextjs.org, a script | `public,max-age=31536000,immutable` | A year: the file name holds a hash of its contents |
+| react.dev, the HTML | `public, max-age=0, must-revalidate` | Browsers check every time |
+| cloudflare.com, the HTML | `max-age=10` | Ten seconds: just enough to absorb a spike |
+| docs.aws.amazon.com | `max-age=300, stale-if-error=600` | Five minutes, and up to ten more if the origin is down |
+
+Notice the npm pair. It's this whole post in two lines: content that changes (the list of versions) gets a short life, content that can never change (one version's tarball) gets a year.
+
+### Reading the headers: who answered?
+
+Every CDN tells you whether it used a copy, each in its own words:
+
+| Header | Seen on | Values |
+| --- | --- | --- |
+| `X-Cache` | Fastly (GitHub Pages), CloudFront | `HIT`, `MISS`; CloudFront writes `Hit from cloudfront` |
+| `CF-Cache-Status` | Cloudflare | `HIT`, `MISS`, `EXPIRED`, `REVALIDATED`, and `DYNAMIC`: not cacheable under the current rules |
+| <Term id="age-header">`Age`</Term> | Every shared cache | Seconds since the copy left the origin; `0` means fresh from it |
+| `X-Served-By`, `X-Amz-Cf-Pop` | Fastly, CloudFront | Which edge answered: `cache-del-…` is Delhi, `BOM78` is Mumbai |
+
+Two of our captures are worth a second look. nodejs.org's HTML came back `CF-Cache-Status: DYNAMIC`: Cloudflare doesn't cache HTML unless a site's rules tell it to. And discord.com's came back `CF-Cache-Status: HIT` while telling browsers `Cache-Control: no-cache`: a CDN can follow its own rules, set by the site's owner, separately from what browsers are told.
+
+### The deploy, as it happened
+
+Here is our poll of `/about/` around the deploy, every ten seconds, from Delhi:
+
+| Time (UTC) | X-Cache | Age | ETag | |
+| --- | --- | --- | --- | --- |
+| 20:24:10 | MISS | 0 | `"6b027a0b-ddc0"` | the edge fetches the old version |
+| 20:24:29 | HIT | 19 | `"6b027a0b-ddc0"` | answered from the copy |
+| 20:25:47 | HIT | 97 | `"6b027a0b-ddc0"` | 503 seconds of freshness left |
+| 20:25:53 | | | | new files go live |
+| 20:26:06 | MISS | 1 | `"6b09e751-ddc0"` | old copy gone: new version |
+| 20:26:24 | HIT | 19 | `"6b09e751-ddc0"` | the new copy is cached |
+
+The edge dropped its copy long before `max-age` said it had to: GitHub purged it as part of the deploy. A <Term id="purge">purge</Term> tells a CDN to throw copies away now; Cloudflare and Fastly let you do it by URL, by tag or for everything, from their dashboards or APIs. GitHub does it for you.
+
+But look at the browser's side. `Cache-Control: max-age=600` was also an instruction to every browser that loaded the page: reuse this for ten minutes without asking. A reader who loaded `/about/` at 20:25:47 had a copy that was fresh until 20:35:47. Their browser wouldn't ask anyone before then, not the edge, not GitHub. Press **Next** to replay it, and see the other scenarios:
+
+<EdgeFlow />
+
+### An ETag that changes every deploy
+
+When a browser's copy finally goes stale, it doesn't have to download the page again. It can ask "has this changed?", sending the copy's `ETag` in `If-None-Match`, and if it hasn't, the server answers `304 Not Modified` with no body. That's <Term id="revalidation">revalidation</Term>, and it's a big saving:
+
+```text title="curl, this blog's home page (real output, two requests)"
+With If-None-Match:  status 304, body 0 bytes
+Without:             status 200, body 119834 bytes
+```
+
+But look at the two ETags in the deploy table: `"6b027a0b-ddc0"` and `"6b09e751-ddc0"`. The second half is the file's size in hex, `0xddc0` = 56,768 bytes, and it didn't change. The first half did. It's the file's modification time, in hex: `0x6b027a0b` is 1,795,324,427 seconds after 1970, which is Sunday 22 November 2026, 05:13:47 UTC, exactly the old `Last-Modified`. After the next deploy, even `icon.svg`, which nobody had touched, came back with a new ETag, `"6b09ebe4-2be"`. Every deploy rewrites every file, so every ETag changes, and every revalidation after a deploy is a full `200`, never a `304`. It's harmless, but it's why "only the changed files are downloaded again" isn't true on every host.
+
+### Cache keys: when ?v=2 doesn't help
+
+A cache stores each copy under a <Term id="cache-key">cache key</Term>: what it uses to decide two requests want the same thing. Browsers use the full URL. CDNs choose for themselves, and that's where a classic trick falls apart. We requested a page bare, then with two made-up query strings:
+
+```text title="GitHub Pages, /series/ (real output)"
+bare          HIT  Age: 4   ETag: "6b027a0b-242fc"
+?nocache=…    HIT  Age: 8   ETag: "6b027a0b-242fc"
+?v=…          HIT  Age: 11  ETag: "6b027a0b-242fc"
+```
+
+Same ETag, and an `Age` that just kept climbing: GitHub Pages' edge ignores query strings, so all three are one copy. Adding `?v=2` gets past the *browser's* cache, which sees a new URL, and then gets the same old copy from the CDN. Other CDNs include the query string by default; the point is that you have to know your CDN's cache key, not guess it. `Vary: Accept-Encoding` adds one header to the key, so a gzip copy and a plain copy are stored separately.
+
+### The pattern that makes deploys instant
+
+The sites at the top of the Cache-Control table have converged on the same answer:
+
+1. **Put a hash of each file's contents in its name**: `chunks/3bjr1e_6b78k5.js`. Change one byte, get a new name.
+2. **Cache those files forever**: `max-age=31536000, immutable`. They can't change at that address, so there's nothing to check.
+3. **Keep the HTML short-lived**, or revalidated every time. It's the only file whose address never changes, and it's the one that lists the hashed names.
+
+A deploy then changes the names inside the HTML. The first request for the new HTML gets the new names, no cache anywhere has those files yet, so they're fetched fresh. Old files can stay cached for a year: nothing refers to them any more. Vercel and Netlify go one step further: their edges keep the HTML (react.dev's copy was 272,288 seconds old, more than three days) while telling browsers `max-age=0, must-revalidate`, and they swap the edge copy at every deploy. Browsers check every time; the edge answers fast.
+
+This blog's build already hashes its file names, but GitHub Pages sends `max-age=600` for everything, so it can't claim the "forever" half. That's a limit of the host, not of the idea.
+
+<Callout type="story" title="Think of it like this">
+Your origin is a printing house; the CDN is a chain of newsstands; the browser is the reader's coffee table. Each newsstand keeps copies and sells from them, and each reader keeps yesterday's paper on the table until it says "stale". You can phone every newsstand to pull the old edition (a purge). You can't phone every coffee table. So you put the date in the newspaper's name: nobody confuses Tuesday's paper with Wednesday's, and the only thing a reader has to check is the front page that says which edition is current.
+</Callout>
+
+## What breaks
+
+| What you see | What's really happening | Fix |
+| --- | --- | --- |
+| Users see the old version for minutes after a deploy | Their browser's copy is still fresh under `max-age` | Short-lived or revalidated HTML; hashed names for everything else |
+| Old version everywhere, `X-Cache: HIT`, Age growing past your deploy time | The CDN wasn't purged and its copy hasn't expired | Purge (URL, tag or all), or a shorter `s-maxage` |
+| New HTML, but it loads old JavaScript or CSS | Assets keep the same name between deploys | Hash file names at build time |
+| `?v=2` didn't help | The CDN's cache key ignores the query string | Change the file name, or purge |
+| `CF-Cache-Status: DYNAMIC` on pages you expected cached | Cloudflare doesn't cache HTML by default | A cache rule, if you want HTML at the edge |
+| One user stuck on an old version for days | A service worker serving its own cached copy | Check DevTools → Application → Service Workers; update or unregister it |
+| A page was cached that shouldn't be shared | `public` or missing `private` on a personalised response | `Cache-Control: private` or `no-store` |
+
+## Field notes: is it a cache, and which one?
+
+<Steps>
+<Step title="Ask the edge directly">
+`curl -sI <url>` from your own machine. Look at `X-Cache` or `CF-Cache-Status`, `Age` and `Last-Modified`. An `Age` larger than the time since your deploy means the edge answered from a copy made before it.
+</Step>
+<Step title="Ask the origin, skipping the edge">
+Most hosts give you a way around the CDN: the origin's own address or a staging URL. If the origin serves the new version and the edge doesn't, it's the CDN. If both serve the old one, the deploy didn't do what you think.
+</Step>
+<Step title="Check the browser before blaming the CDN">
+In DevTools → Network, look at the Size column for `(disk cache)` and `(memory cache)`, and repeat with "Disable cache" ticked. If the user's page is fixed by a hard refresh or a private window, the stale copy was theirs, not the CDN's.
+</Step>
+<Step title="Look for a service worker">
+DevTools → Application → Service Workers. A service worker can answer requests from its own cache indefinitely, regardless of any header. "Works in a private window, broken in a normal one, for days" is its signature.
+</Step>
+<Step title="Check what your HTML points at">
+View the deployed HTML's source and read the script and stylesheet names. If they didn't change after a deploy that changed the code, your build isn't hashing names, and every cache is right to serve the old files.
+</Step>
+<Step title="Decide what each kind of file should send">
+Hashed assets: `public, max-age=31536000, immutable`. HTML: `no-cache`, or a short `max-age` with a purge on deploy. Personalised responses: `private` or `no-store`. Then verify each with `curl -sI`.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"Purging the CDN updates everyone."** It updates the CDN. Browsers keep their copies until `max-age` runs out.
+
+**"no-cache means don't cache."** It means *check before reusing*. `no-store` means don't keep it.
+
+**"Add ?v=2 to bust the cache."** It busts the browser's cache. Whether it busts the CDN's depends on the CDN's cache key; on GitHub Pages it doesn't.
+
+**"A long max-age on HTML is a free speed-up."** It's a promise that this page won't change for that long, made to every browser that loads it.
+
+**"304 means nothing was downloaded, so revalidation is free."** It still costs a round trip, and on hosts where every deploy changes every ETag, it's a full download anyway.
+
+**"HIT means the user got the right version."** It means the cache had a copy. Whether that copy is current is exactly the question.
+
+## Summary
+
+<FiveQuestions
+  problem="Sending every request to your origin is slow for far-away users and expensive for you. Caches in the browser and at CDN edges answer from copies, so most requests never reach your server."
+  sees="Users seeing old versions after a deploy, fixes that appear after a hard refresh or in a private window, `X-Cache: HIT`, `CF-Cache-Status`, a growing `Age`, and `(disk cache)` in DevTools."
+  underneath="Cache-Control tells each cache how long it may reuse a copy (max-age for everyone, s-maxage for CDNs, immutable for files that never change). Edges store copies under a cache key and answer HITs without asking the origin; browsers reuse fresh copies without asking anyone. A purge clears an edge, not a browser."
+  breaks="HTML with a long max-age, assets that keep their names across deploys, cache keys that ignore query strings, CDNs that weren't purged, service workers with their own caches, and personalised pages marked public."
+  misconception="That purging updates everyone, that no-cache means don't cache, that ?v=2 always works, that long HTML caching is free, that 304 is always cheap, and that a HIT means the current version."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "What does `Age: 97` on a response mean?",
+      options: ["The page is 97 days old", "The copy left the origin 97 seconds ago: a cache answered", "The server took 97 ms", "It expires in 97 seconds"],
+      answer: 1,
+      why: "Age counts seconds since the cache got its copy from the origin. Age: 0 means fresh from the origin.",
+    },
+    {
+      q: "GitHub purged its CDN 13 seconds after our deploy. Why could a reader still see the old version for ten minutes?",
+      options: ["The purge failed", "Their browser had a fresh copy under max-age=600 and didn't ask anyone", "DNS caching", "GitHub was slow"],
+      answer: 1,
+      why: "A purge clears the edge. A browser reuses its own fresh copy without contacting any server.",
+    },
+    {
+      q: "What's the difference between `no-cache` and `no-store`?",
+      options: ["None", "no-cache: keep it but check before every reuse; no-store: don't keep it at all", "no-cache is for CDNs, no-store for browsers", "no-store is faster"],
+      answer: 1,
+      why: "no-cache still caches; it just forces revalidation every time.",
+    },
+    {
+      q: "Why can hashed files like `3bjr1e_6b78k5.js` be cached for a year with `immutable`?",
+      options: ["They're small", "Changed content gets a new name, so the file at this address can never change", "CDNs ignore them", "Browsers delete them anyway"],
+      answer: 1,
+      why: "Deploys change the names inside the HTML; the old files are simply no longer requested.",
+    },
+    {
+      q: "Adding `?v=2` to a GitHub Pages URL: what happened at the CDN?",
+      options: ["A MISS and a fresh copy", "The same cached copy: Age kept climbing, same ETag", "An error", "The CDN purged everything"],
+      answer: 1,
+      why: "GitHub Pages' edge ignores query strings in its cache key. The browser saw a new URL; the edge didn't.",
+    },
+    {
+      q: "`CF-Cache-Status: DYNAMIC` means:",
+      options: ["The page is a single-page app", "Cloudflare didn't cache it under the current rules, so it went to the origin", "The page changed", "A cache error"],
+      answer: 1,
+      why: "Cloudflare doesn't cache HTML by default; nodejs.org's HTML came back DYNAMIC.",
+    },
+    {
+      q: "Why did an unchanged icon get a new ETag after a GitHub Pages deploy?",
+      options: ["It was recompressed", "The ETag is built from the file's modification time and size, and a deploy rewrites every file", "A bug", "ETags are random"],
+      answer: 1,
+      why: "0x6b09ebe4 decodes to the deploy time. Revalidation after a deploy is then a full 200, not a 304.",
+    },
+    {
+      q: "A user sees an old version for days, even after you purged. It works in a private window. What do you check?",
+      options: ["The CDN's purge log", "A service worker serving its own cache", "DNS", "The database"],
+      answer: 1,
+      why: "Service workers can answer from their own cache regardless of HTTP headers. DevTools → Application shows them.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="Users still see an old version after a deploy. How do you find out why?">
+Check which layer answers. curl -sI the URL and read X-Cache or CF-Cache-Status, Age and Last-Modified: an Age older than the deploy means the CDN served a pre-deploy copy, so purge or shorten s-maxage. Compare with the origin directly to rule out a failed deploy. If the edge is fresh, it's the browser: check Cache-Control on the HTML and whether assets are hashed; a hard refresh or private window fixing it confirms a browser copy, and a service worker is the suspect when it persists for days.
+</Question>
+<Question q="What caching headers would you set for a web app's HTML and its JS/CSS bundles?">
+Bundles with content hashes in their names: Cache-Control: public, max-age=31536000, immutable, since the URL changes when the content does. HTML: no-cache (always revalidate, cheap with ETags) or a short max-age, with the CDN either revalidating or purged on deploy; optionally a longer s-maxage at the edge plus a purge. Personalised responses: private or no-store so shared caches never store them.
+</Question>
+<Question q="Explain max-age vs s-maxage, and no-cache vs no-store.">
+max-age applies to all caches, browser and shared; s-maxage overrides it for shared caches like CDNs only, so the edge can keep a copy longer or shorter than browsers. no-cache allows storing but requires revalidation with the origin before each reuse; no-store forbids storing the response anywhere.
+</Question>
+<Question q="What is a cache key, and how can it cause bugs?">
+It's what a cache uses to decide two requests are for the same thing: typically scheme, host and path, sometimes the query string and headers listed in Vary. Bugs come from mismatches: a CDN that ignores query strings makes ?v=2 cache-busting fail at the edge; one that includes them lets tracking parameters fragment the cache; a missing Vary can serve the wrong variant, like a compressed body to a client that didn't ask for it, or one user's language to another.
+</Question>
+<Question q="How do ETags and 304 responses work, and when don't they help?">
+The server sends an ETag identifying a version of the response. When the browser's copy is stale, it sends If-None-Match with that tag; if the version is unchanged, the server returns 304 Not Modified with no body, and the browser reuses its copy. They don't help when the ETag changes without the content changing, as with hosts that derive it from file modification time and rewrite every file on deploy, or when validators differ across servers behind a load balancer. And a 304 still costs a round trip.
+</Question>
+<Question q="What does purging a CDN do, and what doesn't it do?">
+It tells the edge servers to discard stored copies, by URL, tag or everything, so the next request goes to the origin. It doesn't touch browser caches, which keep fresh copies until their max-age expires, nor service worker caches. That's why the robust approach is hashed asset names with immutable caching and short-lived or revalidated HTML, using purges for the HTML only.
+</Question>
+</Interview>
+
+## What's next
+
+That's the end of **Week 2: Things We Install Without Understanding**. You've seen [what npm install does](/posts/you-ran-npm-install/), [why node_modules is huge](/posts/why-node-modules-is-huge/), [what a lockfile locks](/posts/what-your-lockfile-locks/), [why pnpm breaks what npm allowed](/posts/npm-works-pnpm-breaks/), [who the gateway in a 502 is](/posts/502-bad-gateway/), [what a load balancer really spreads](/posts/load-balancer-one-busy-server/), and now the copies between your deploy and your users.
+
+All week, Docker kept appearing in the background: the app listening on the wrong address, `node_modules` copied into an image, Nginx holding a stale container address. Next week it gets a series of its own, **Week 3: Docker Under the Hood**, starting with **You Typed docker run. What Actually Started?** [See everything coming in Week 3](/#this-week).
+
+### Sources and further reading
+
+- MDN: [HTTP caching](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Caching) and [Cache-Control](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cache-Control)
+- RFC 9111: [HTTP Caching](https://www.rfc-editor.org/rfc/rfc9111), including `Age` and how freshness is calculated
+- web.dev: [Prevent unnecessary network requests with the HTTP Cache](https://web.dev/articles/http-cache)
+- Cloudflare docs: [Cloudflare cache responses](https://developers.cloudflare.com/cache/concepts/cache-responses/) (CF-Cache-Status values) and [default cache behavior](https://developers.cloudflare.com/cache/concepts/default-cache-behavior/)
+- Fastly docs: [Understanding cache HIT and MISS headers](https://www.fastly.com/documentation/guides/full-site-delivery/caching/checking-cache/)
+- MDN: [Using Service Workers](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)
