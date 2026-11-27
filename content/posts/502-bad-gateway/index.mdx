@@ -1,0 +1,353 @@
+---
+title: "502 Bad Gateway: Who Is the Gateway, and What Went Bad?"
+subtitle: "The gateway is the proxy in front of your app, and a 502 means its trip to your app failed. We broke Nginx on purpose to show what each log line means."
+date: 2026-11-28
+series: 2
+roadmap: [22, 23, 31, 32]
+tags: [nginx, reverse-proxy, http, debugging, networking]
+author: adarshdebata
+thumb: gateway
+summary: "A reverse proxy like Nginx receives every request and makes a second, separate request to your app. A 502 means that second trip failed: nothing listening, the app hanging up, or a stale address. A 504 means the app was too slow, a 413 that Nginx refused the body before your app saw it. The status is generic; Nginx's error log line says exactly which trip failed and why, so it's the first place to look."
+---
+
+**You use it every day. But do you actually know what happens underneath?** The first half of this week was about packages. The second half is about the servers that stand between your app and its users, and it starts with the one in the most famous error page on the web.
+
+[Helmet's post](/posts/you-installed-helmet/) ended by promising this one, and [the headers post](/posts/http-headers-the-conversation/) showed a request picking up `X-Forwarded-For` on its way through. Now we look at the thing that adds it: the server in front of your server.
+
+## What you see
+
+Your API is down. The browser shows this, and your app's logs show nothing at all:
+
+```html title="The response body (real output)"
+<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>nginx/1.31.10</center>
+</body>
+</html>
+```
+
+Its relatives turn up in the same places:
+
+- **504 Gateway Time-out** on a report that takes a while to generate.
+- **413 Request Entity Too Large** the first time someone uploads a photo.
+- **A WebSocket that never opens**, though it works when you connect to the app directly.
+- **Every user's IP address is the same**, `172.18.0.3`, in your app's logs.
+
+All four come from the same place, and it isn't your app. We set up Nginx 1.31 in front of a small Node.js app in Docker and broke the setup on purpose, every way we could think of. Before reading on:
+
+<Predict
+  question="Your API returns 502 Bad Gateway. Where do you look first?"
+  options={[
+    "Your app's error logs",
+    "The proxy's error log: the 502 came from it, and your app may never have seen the request",
+    "The browser console",
+    "The database logs",
+  ]}
+  answer={1}
+>
+**The proxy's error log.** A 502 is written by the proxy, about its own trip to your app. In half of our experiments the app never received the request at all, so its logs were empty. Nginx's error log named the exact reason every time: "Connection refused", "prematurely closed", "Host is unreachable".
+</Predict>
+
+## What's underneath
+
+### Two trips, not one
+
+A <Term id="reverse-proxy">reverse proxy</Term> sits in front of your app. The browser connects to it, and it connects to your app, which Nginx calls the <Term id="upstream">upstream</Term>. Those are two separate connections, with two separate requests, and either one can fail on its own.
+
+The whole setup is a few lines of configuration:
+
+```nginx title="default.conf"
+server {
+    listen 80;
+
+    location / {
+        proxy_pass http://app:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Through that config, our app saw this for every request:
+
+```text title="What the app saw (real output)"
+"remoteAddress": "172.18.0.3"
+"host": "localhost"
+"x-forwarded-for": "172.18.0.1"
+"x-forwarded-proto": "http"
+```
+
+`172.18.0.3` is Nginx. To your app, every request comes from the proxy, which is why every user has the same IP in your logs. The real caller survives only in `X-Forwarded-For`, and only because the config adds it. In Express, `app.set('trust proxy', 1)` tells it to read `req.ip` from that header; trust more hops than you really have, and anyone can fake their IP with a header of their own.
+
+### What a reverse proxy is for
+
+Nginx is a general-purpose web server, not a magic box. In front of an app it usually does some of these:
+
+- **Ends HTTPS.** The certificate lives on the proxy; the trip to your app is often plain HTTP inside a private network. That's why `X-Forwarded-Proto` exists: your app can't tell HTTPS was used otherwise.
+- **Routes.** By host name and path, to different apps.
+- **Buffers.** It reads a whole upload before passing it on, and takes a slow client's download off your app's hands.
+- **Limits and times out.** Body size, how long to wait for the app, how many connections.
+- **Balances** across several copies of your app: [the next post](/posts/load-balancer-one-busy-server/).
+
+### Forward proxy vs reverse proxy
+
+The word "proxy" means both, and they're mirror images. A <Term id="forward-proxy">forward proxy</Term> works for the **client side**: your company sends outgoing traffic through one, which is how a firewall can re-sign HTTPS and break `npm install` with `SELF_SIGNED_CERT_IN_CHAIN`, as in [the first post this week](/posts/you-ran-npm-install/). A reverse proxy works for the **server side**: clients don't know it's there, and they think it *is* the website. Same software, often; opposite jobs.
+
+### Break it, six ways
+
+Pick a scenario and press **Next**. Every log line is what Nginx actually printed:
+
+<ProxyFlow />
+
+### Read the log line, not the status
+
+The status code is generic. The error log is specific. These are the lines we got, and what each one means:
+
+| Nginx error log says | Status | What happened |
+| --- | --- | --- |
+| `connect() failed (111: Connection refused) while connecting to upstream` | 502 | The app's machine answered, but nothing listens on that port: app down, wrong port, or listening on 127.0.0.1 inside its container |
+| `connect() failed (113: Host is unreachable) while connecting to upstream` | 502 | Nothing answers at that address at all: the container or server is gone. This one took 18.7 seconds to fail |
+| `upstream prematurely closed connection while reading response header from upstream` | 502 | The app accepted the request, then hung up without answering: a crash, an out-of-memory kill, or a closed keep-alive connection |
+| `recv() failed (104: Connection reset by peer) while reading response header from upstream` | 502 | Same family: the app's side reset the connection. Common in [the keep-alive race](/posts/load-balancer-one-busy-server/) |
+| `upstream timed out (110: Operation timed out) while reading response header from upstream` | 504 | The app is alive but didn't send headers within `proxy_read_timeout` (60 s by default) |
+| `client intended to send too large body: 2097152 bytes` | 413 | The body was over `client_max_body_size` (1 MB by default). The app never saw it |
+| `no live upstreams while connecting to upstream` | 502 | Every server in the group is marked as failed, so Nginx didn't even try |
+| `[emerg] host not found in upstream "app"` | none | Nginx won't start: it couldn't look up the app's name |
+
+That last one bit us during setup: our app's container wasn't reachable by the name `app`, so Nginx refused to start at all. That's worth knowing about Nginx: by default it looks up upstream names **once**, when it starts.
+
+### The address Nginx remembered
+
+That once-only lookup causes one of the most confusing 502s. We recreated the app's container; the new one came up healthy at a new address, `172.18.0.4`. Every request still failed:
+
+```text title="Nginx error log (real output, shortened)"
+[error] connect() failed (111: Connection refused) while connecting to upstream, request: "GET / HTTP/1.1", upstream: "http://172.18.0.2:3000/"
+```
+
+Look at the address: `172.18.0.2`, the old one, now taken by a different container. `nginx -s reload` fixed it by looking the name up again. The lasting fix is to make Nginx re-resolve on its own, and current open-source Nginx can:
+
+```nginx title="default.conf, re-resolving"
+resolver 127.0.0.11 valid=10s;   # Docker's built-in DNS server
+
+upstream app_dyn {
+    zone app_dyn 64k;
+    server app:3000 resolve;      # look the name up again as its DNS answer expires
+}
+```
+
+With that in place we moved the app to `172.18.0.10`, and thirteen seconds later Nginx was sending requests there, no reload needed.
+
+### 504: the request that succeeded anyway
+
+A 504 doesn't mean the work didn't happen. We gave Nginx `proxy_read_timeout 5s` and asked for something that takes eight:
+
+```text title="Terminal (real output)"
+$ curl -s -o /dev/null -w "%{http_code} after %{time_total}s\n" http://localhost:18080/slow
+504 after 5.217167s
+```
+
+The user got an error after five seconds. Three seconds later, the app finished the job and wrote its answer into a connection Nginx had already closed. If that job was "charge the card" or "send the email", it happened, and a user staring at a 504 will probably press the button again. Raising the timeout hides the slowness; it doesn't remove it. Make slow work asynchronous, or make retries safe to repeat.
+
+### 413: the request that never arrived
+
+The 2 MB upload was refused by Nginx straight away, from the size in its headers:
+
+```text title="Nginx error log (real output)"
+[error] client intended to send too large body: 2097152 bytes, request: "POST /upload HTTP/1.1"
+```
+
+Your app's upload limit, your error handler, your nice error message: none of it runs. If your app accepts 10 MB files, Nginx needs `client_max_body_size 10m;` too.
+
+A 900 KB upload went through, but Nginx read all of it before passing it on:
+
+```text title="Nginx error log (real output)"
+[warn] a client request body is buffered to a temporary file /var/cache/nginx/client_temp/0000000001
+```
+
+That's a feature: a user on a slow connection ties up Nginx for the upload, not your app. But it means your app can't stream uploads through Nginx unless you turn request buffering off.
+
+### WebSockets: the headers that don't travel
+
+A WebSocket starts as an HTTP request with `Upgrade: websocket` and `Connection: Upgrade`. Those are <Term id="hop-by-hop">hop-by-hop</Term> headers: they describe one connection, so a proxy doesn't pass them on. Through our default config, the app saw `Upgrade=(none)` and answered a plain `200 OK`, and the WebSocket never opened. Three lines fix it:
+
+```nginx title="default.conf"
+location /ws {
+    proxy_pass http://app:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+After a reload: `HTTP/1.1 101 Switching Protocols`.
+
+### Streaming: it wasn't the buffering
+
+A common complaint is that server-sent events or streamed responses "arrive all at once behind Nginx", and the usual advice is `proxy_buffering off`. We tested it with an endpoint that writes one line a second. With Nginx's default settings, `proxy_buffering on` included, the lines arrived on time: at +1.7, +2.6, +3.6 and +4.6 seconds. Then we turned on gzip for that content type:
+
+```text title="Chunks as they arrived, gzip on (real output)"
+content-encoding: gzip
++4.1s  67 bytes
++4.1s  end
+```
+
+Everything in one 67-byte lump at the end: compression waits to fill its buffer. Check `gzip_types` before you blame buffering.
+
+<Callout type="story" title="Think of it like this">
+A reverse proxy is the receptionist at an office. Visitors only ever talk to the receptionist, who walks into the back to ask the right person and comes back with the answer. "502 Bad Gateway" is the receptionist saying "I couldn't get a proper answer from the back": the person's desk was empty, they hung up mid-sentence, or they've moved desks and nobody told reception. 504 is "they're taking too long, I gave up waiting". 413 is "that parcel is too big, I'm not even taking it in".
+</Callout>
+
+## What breaks
+
+| What you see | Most likely cause | Fix |
+| --- | --- | --- |
+| 502, app logs empty, log says `Connection refused` | App down, wrong port, or listening on 127.0.0.1 in its container | Start it; check the port; listen on 0.0.0.0 ([Week 1](/posts/127-0-0-1-vs-0-0-0-0/)) |
+| 502 right after a deploy, app healthy | Nginx still uses the old container's address | Reload Nginx, or `resolver` plus `resolve` |
+| 502, log says `prematurely closed` | App crashed or was killed mid-request | Look for a crash or restart at that second in the app's logs |
+| Random, rare 502s on POSTs | Keep-alive connections closed by the app as Nginx reuses them | Proxy idle timeout shorter than the app's ([next post](/posts/load-balancer-one-busy-server/)) |
+| 504 after exactly 60 seconds | `proxy_read_timeout`; the app is slow | Speed up or make the work asynchronous; raise the timeout only knowingly |
+| 413 on uploads | `client_max_body_size` 1 MB default | Raise it to match your app's limit |
+| WebSocket stays on HTTP | Upgrade headers dropped | `proxy_http_version 1.1` plus the two headers |
+| Every user has the proxy's IP | Your app reads the socket address | Read `X-Forwarded-For` via your framework's trust-proxy setting |
+| Stream arrives in one lump | gzip on the stream's content type | Exclude it from `gzip_types` |
+
+## Field notes: debugging a 502
+
+<Steps>
+<Step title="Find out who wrote the error">
+The response's `Server` header and the page footer say which server produced it: `nginx/1.31.10` here. With a CDN in front, it might be the CDN's error page instead, and then the broken trip is the CDN's, not Nginx's. Each hop that can say 502 is a hop to check.
+</Step>
+<Step title="Read the proxy's error log">
+On a server, `/var/log/nginx/error.log`. In the official Docker image both logs go to the container's output, `access.log` to stdout and `error.log` to stderr, so `docker logs <nginx-container>` shows them. Find the line at the time of the failure and match it to the table above.
+</Step>
+<Step title="Skip the proxy and ask the app directly">
+From the proxy's own network, call the upstream address from the log line: `docker exec <nginx> wget -qO- http://app:3000/`, or `nc` to test the port. If that fails too, the problem is between the proxy and the app, not in the browser.
+</Step>
+<Step title="Compare the address in the log with the app's real one">
+`upstream: "http://172.18.0.2:3000/"` in the log, and `docker inspect` says the app is at `172.18.0.4`? Nginx is using a stale address. Reload it, then add `resolver` and `resolve` so it doesn't happen again.
+</Step>
+<Step title="Time the failure">
+`curl -s -o /dev/null -w "%{http_code} %{time_total}\n" <url>`. A 504 at a round number, 5, 30 or 60 seconds, is a timeout setting somewhere. Find which hop has that value: proxy, load balancer and CDN all have their own.
+</Step>
+<Step title="Test before you reload">
+`nginx -t` checks the configuration without touching the running server. Then `nginx -s reload` swaps it in without dropping connections.
+</Step>
+</Steps>
+
+## What developers often get wrong
+
+**"502 means there's a bug in my app."** It means the proxy couldn't get a valid response. Often your app was down, unreachable, or never saw the request.
+
+**"504 means the request failed."** The proxy stopped waiting. The app may finish the work anyway, after the user saw an error.
+
+**"Just raise the timeout."** That turns a fast failure into a slow one. The work is still slow, and the browser, the CDN or the user may give up first.
+
+**"The proxy is transparent."** It changes headers, drops hop-by-hop ones, adds X-Forwarded ones, limits body sizes and holds whole requests in buffers.
+
+**"proxy_buffering off fixes streaming."** In our test it wasn't buffering at all; it was gzip.
+
+**"Nginx follows my containers around."** By default it looks names up once, at startup, and keeps the address.
+
+## Summary
+
+<FiveQuestions
+  problem="Apps shouldn't each handle HTTPS, routing, slow clients, huge uploads and failover. A reverse proxy in front does it for them, and makes one app or many look like a single website."
+  sees="`502 Bad Gateway` with nothing in the app's logs, `504 Gateway Time-out` on slow pages, `413 Request Entity Too Large` on uploads, WebSockets that won't open, and every user showing the proxy's IP."
+  underneath="Two separate trips: client to proxy, proxy to upstream. Nginx adds X-Forwarded headers, drops hop-by-hop ones, buffers bodies, enforces timeouts and size limits, and looks upstream names up once at startup. When its trip fails it answers for the app, and its error log says exactly how the trip failed."
+  breaks="Apps not listening where the proxy connects, crashes mid-request, stale upstream addresses after deploys, timeouts shorter than the work, default body limits, missing WebSocket headers, and compression batching streams."
+  misconception="That a 502 is an app bug, that a 504 means nothing happened, that raising timeouts fixes slowness, that the proxy is transparent, and that proxy_buffering is why streams arrive late."
+/>
+
+## Test yourself
+
+<Quiz
+  questions={[
+    {
+      q: "In \"502 Bad Gateway\", who is the gateway?",
+      options: ["The browser", "The proxy in front of your app, reporting that its own trip to the app failed", "Your app", "The DNS server"],
+      answer: 1,
+      why: "The status is written by the proxy, about its connection to the upstream.",
+    },
+    {
+      q: "The log says `connect() failed (111: Connection refused) while connecting to upstream`. What's the likely cause?",
+      options: ["The app is slow", "Nothing is listening at that address and port: app down, wrong port, or listening on 127.0.0.1", "The request body is too big", "The user's browser is offline"],
+      answer: 1,
+      why: "Refused means the machine answered and said no one is listening there.",
+    },
+    {
+      q: "Which error does a slow app produce?",
+      options: ["502", "504, with \"upstream timed out\" in the log", "413", "404"],
+      answer: 1,
+      why: "Nginx stops waiting for the response header after proxy_read_timeout, 60 seconds by default.",
+    },
+    {
+      q: "Nginx returned 504 after 5 seconds. The app's job takes 8. What happened to the job?",
+      options: ["It was cancelled", "It finished three seconds later, into a closed connection: the work still happened", "It was retried", "Nginx saved the result"],
+      answer: 1,
+      why: "Nginx stopped waiting; it didn't stop the app.",
+    },
+    {
+      q: "A 2 MB upload gets 413 from Nginx. Does your app's error handler run?",
+      options: ["Yes", "No: Nginx refused it based on client_max_body_size, and the app never saw the request", "Only in production", "Only for JSON"],
+      answer: 1,
+      why: "The default limit is 1 MB, and Nginx checks it before passing anything on.",
+    },
+    {
+      q: "Your app container was recreated and is healthy, but Nginx returns 502 until reloaded. Why?",
+      options: ["Nginx caches responses", "Nginx looked up the app's name once at startup and kept the old IP address", "The app's port changed", "Docker blocks Nginx"],
+      answer: 1,
+      why: "The log showed the old address. A resolver with the resolve parameter makes Nginx look it up again.",
+    },
+    {
+      q: "Why does a WebSocket fail through a default Nginx config?",
+      options: ["Nginx doesn't support WebSockets", "Upgrade and Connection are hop-by-hop headers, so Nginx doesn't forward them unless configured", "WebSockets need HTTPS", "The app is too slow"],
+      answer: 1,
+      why: "proxy_http_version 1.1 plus setting Upgrade and Connection passes the upgrade through.",
+    },
+    {
+      q: "Why does every request in your app's logs come from 172.18.0.3?",
+      options: ["One user is very active", "It's the proxy's address; the real client is in X-Forwarded-For", "A bug in Node.js", "Docker NAT hides all IPs"],
+      answer: 1,
+      why: "Your app's connection is from the proxy. Use your framework's trust-proxy setting to read X-Forwarded-For safely.",
+    },
+  ]}
+/>
+
+## Interview questions you should be able to answer
+
+<Interview>
+<Question q="What's the difference between a 502 and a 504?">
+Both come from a proxy or gateway about its upstream. 502 Bad Gateway means it got an invalid response or none: the connection was refused, reset or closed early, or the upstream was unreachable. 504 Gateway Timeout means the upstream didn't respond in time; with Nginx, typically proxy_read_timeout waiting for response headers. The proxy's error log distinguishes the exact cause.
+</Question>
+<Question q="What does a reverse proxy do, and how is it different from a forward proxy?">
+A reverse proxy accepts requests on behalf of servers: it terminates TLS, routes by host and path, load-balances, buffers, caches, enforces limits and adds forwarding headers; clients think it's the site. A forward proxy acts on behalf of clients, sending their outbound requests: corporate egress proxies, filtering and inspection. The software can be the same; the difference is whose side it's on.
+</Question>
+<Question q="Behind a proxy, your app logs the same IP for every user. How do you get the real client IP, safely?">
+The socket's remote address is the proxy. The proxy should send X-Forwarded-For (or X-Real-IP), and the app should be configured to trust exactly the proxies in front of it, for example app.set('trust proxy', 1) in Express for one hop. Trusting the header blindly lets any client spoof its IP by sending its own X-Forwarded-For; trusting the right number of hops takes the address the last trusted proxy saw.
+</Question>
+<Question q="You get intermittent 502s after deploys in a container setup. What would you check?">
+The Nginx error log's upstream address against the containers' current addresses: Nginx resolves upstream hostnames at startup by default and keeps the IP, so recreated containers get new IPs and Nginx keeps dialing the old one. Fix with a reload on deploy, or a resolver directive plus the resolve parameter (or a variable in proxy_pass) so names are re-resolved. Also check health checks and that new containers are ready before traffic shifts.
+</Question>
+<Question q="A file upload fails with 413. Where's the limit, and what else should you consider?">
+Nginx's client_max_body_size, 1 MB by default, checked before the request reaches the app. Raise it to match the app's own limit, at every proxy layer (Nginx, ingress, CDN). Also consider that Nginx buffers whole request bodies before passing them on, to disk for large ones, which affects disk usage and prevents streaming uploads unless proxy_request_buffering is off.
+</Question>
+<Question q="How do you proxy WebSockets through Nginx?">
+WebSockets start with an HTTP/1.1 upgrade request carrying Upgrade and Connection headers, which are hop-by-hop and not forwarded by default. Configure proxy_http_version 1.1, proxy_set_header Upgrade $http_upgrade and proxy_set_header Connection "upgrade" (or a map for non-upgrade requests), and raise proxy_read_timeout for long-lived idle connections, since Nginx closes connections with no traffic after it.
+</Question>
+</Interview>
+
+## What's next
+
+One proxy, one app. But you've probably got several copies of your app, and something has to decide which one gets each request. Next: **Your Load Balancer Is Working. So Why Is One Server Doing All the Work?** [Read it now](/posts/load-balancer-one-busy-server/), or [see everything in Week 2](/#this-week).
+
+### Sources and further reading
+
+- Nginx docs: [ngx_http_proxy_module](https://nginx.org/en/docs/http/ngx_http_proxy_module.html), including `proxy_read_timeout`, buffering and `proxy_pass`
+- Nginx docs: [client_max_body_size](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size) and [the upstream module](https://nginx.org/en/docs/http/ngx_http_upstream_module.html), including `resolve`
+- Nginx docs: [WebSocket proxying](https://nginx.org/en/docs/http/websocket.html)
+- MDN: [502 Bad Gateway](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/502), [504 Gateway Timeout](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/504) and [413 Content Too Large](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/413)
+- Express docs: [Express behind proxies](https://expressjs.com/en/guide/behind-proxies.html)

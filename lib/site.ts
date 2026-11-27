@@ -107,6 +107,7 @@ export const weeks: Week[] = [
       {
         day: 5,
         title: "502 Bad Gateway: Who Is the Gateway, and What Went Bad?",
+        slug: "502-bad-gateway",
         about:
           "What a reverse proxy like Nginx does in front of your app, how it differs from a forward proxy, and what 502, 504 and 413 each tell you about where a request died.",
       },
